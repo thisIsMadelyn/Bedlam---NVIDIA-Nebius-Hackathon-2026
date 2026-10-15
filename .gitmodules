@@ -1,0 +1,3 @@
+[submodule "targets/fastapi-boilerplate"]
+	path = targets/fastapi-boilerplate
+	url = https://github.com/benavlabs/FastAPI-boilerplate.git
