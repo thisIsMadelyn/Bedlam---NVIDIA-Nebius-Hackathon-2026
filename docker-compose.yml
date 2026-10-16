@@ -1,0 +1,86 @@
+name: bedlam
+
+# Target stack: FastAPI boilerplate + Postgres + Redis + Toxiproxy.
+# Toxiproxy fronts both Postgres and Redis -- the api container reaches them
+# only through its proxy ports (5433, 6380). Bedlam, running on the host,
+# injects and removes faults through Toxiproxy's control API (8474) and
+# never touches the boilerplate's source to do it.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.9.0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./docker/toxiproxy.json:/config/toxiproxy.json:ro
+    command: ["-host=0.0.0.0", "-config=/config/toxiproxy.json"]
+    ports:
+      - "8474:8474" # control API -- bedlam's faults talk to this
+      - "5433:5433" # postgres, fronted
+      - "6380:6380" # redis, fronted
+    # No healthcheck: the image is scratch-based (no shell, no CLI tools to
+    # exec), and it binds its listeners within milliseconds of starting, so
+    # api's `depends_on: service_started` below never races it in practice.
+
+  api:
+    build:
+      context: ./targets/fastapi-boilerplate
+      dockerfile: backend/Dockerfile
+      target: dev
+    env_file:
+      - ./targets/fastapi-boilerplate/backend/.env.example
+    environment:
+      # Route both the db and cache layers through Toxiproxy instead of the
+      # real backends. Zero changes to the boilerplate's source -- this is
+      # the same POSTGRES_SERVER / CACHE_REDIS_HOST / ... override mechanism
+      # the boilerplate's own docs already use for Docker Compose.
+      POSTGRES_SERVER: toxiproxy
+      POSTGRES_PORT: "5433"
+      CACHE_REDIS_HOST: toxiproxy
+      CACHE_REDIS_PORT: "6380"
+      RATE_LIMITER_REDIS_HOST: toxiproxy
+      RATE_LIMITER_REDIS_PORT: "6380"
+      TASKIQ_REDIS_HOST: toxiproxy
+      TASKIQ_REDIS_PORT: "6380"
+    ports:
+      - "8000:8000"
+    depends_on:
+      toxiproxy:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 15s
+
+volumes:
+  postgres-data:
+  redis-data:

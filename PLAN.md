@@ -119,10 +119,10 @@ Artifacts:
 - Manual proof: inject Redis latency, observe the API degrade, remove it, observe recovery
 
 Done when:
-- [ ] `docker compose up` brings the full stack to healthy from a clean checkout
-- [ ] A fault is injected and removed via Toxiproxy API with zero changes to boilerplate source
-- [ ] Probes return a structured per-layer health snapshot
-- [ ] Blast radius is computable before injection, not after
+- [x] `docker compose up` brings the full stack to healthy from a clean checkout
+- [x] A fault is injected and removed via Toxiproxy API with zero changes to boilerplate source
+- [x] Probes return a structured per-layer health snapshot
+- [x] Blast radius is computable before injection, not after
 
 Risk gate — **Mon 20 Oct**: if Toxiproxy is not working against this boilerplate,
 abandon it and fall back to in-process ASGI middleware that injects latency and
