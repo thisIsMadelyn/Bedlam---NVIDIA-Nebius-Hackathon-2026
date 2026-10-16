@@ -1,0 +1,13 @@
+--- a/backend/src/infrastructure/database/session.py
++++ b/backend/src/infrastructure/database/session.py
+@@ -19,6 +19,10 @@
+         "future": True,
+         "pool_pre_ping": settings.POSTGRES_POOL_PRE_PING,
+         "pool_recycle": settings.POSTGRES_POOL_RECYCLE,
++        # Fail a checkout after 5s instead of queueing behind a stuck pool,
++        # and bound every statement so a hung query releases its connection.
++        "pool_timeout": 5,
++        "connect_args": {"timeout": 5, "command_timeout": 10},
+     }
+     if "poolclass" not in overrides:
+         options["pool_size"] = settings.POSTGRES_POOL_SIZE

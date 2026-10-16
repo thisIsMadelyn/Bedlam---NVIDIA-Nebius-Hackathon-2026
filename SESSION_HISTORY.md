@@ -23,6 +23,33 @@ badges of either kind.
 
 ---
 
+## Session [2026-10-16-2225]
+
+- **Start status:** Phase 1 complete (`900dd61`). Phase 2 (intelligence
+  layer, headless) not started.
+- **End status:** Phase 2 decision chain built and verified offline: 27
+  tests pass, covering a full two-cycle headless loop, a structured trace,
+  identical fault sequences across three same-seed runs, and different
+  Tavily output routing to different specialists. Not yet verified live:
+  the local `.env` holds placeholder keys and Docker was not running, so
+  the Phase 2 done-when boxes stay unticked until a live
+  `make up && make headless` run three times.
+- **Badges:**
+  - 🆕 Addition — `bedlam/models/client.py`: Token Factory wrapper with
+    retries, logged Super → Nano fallback and per-call records.
+  - 🆕 Addition — `bedlam/seed.py`: every model-site seed and RNG stream
+    now derives from the single `BEDLAM_SEED` root.
+  - 🆕 Addition — `bedlam/search/`: lockfile-driven dependency manifest,
+    Nano query formulation, live Tavily client with a per-run cache.
+  - 🆕 Addition — `bedlam/router.py` and `bedlam/specialists/`:
+    search-result layer labelling, score-weighted routing, three
+    specialists over a discrete fault catalog.
+  - 🆕 Addition — `bedlam/diff.py`, `bedlam/select.py`,
+    `bedlam/probes/classify.py`, `bedlam/loop.py`, `bedlam/trace.py`,
+    prompts in `bedlam/prompts/`, scripted patches in `demo/patches/`.
+  - 🆕 Addition — `tests/` with offline fakes; `pytest` added as a dev
+    dependency.
+
 ## Session [2026-10-16-1426]
 
 - **Start status:** Phase 0 complete, `SESSION_HISTORY.md` added (`92326f5`).

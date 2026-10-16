@@ -10,9 +10,11 @@ normalised ids.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 from typing import Final
+
+from bedlam.seed import derive
 
 SUPER: Final = "nvidia/nemotron-3-super-120b-a12b"
 NANO: Final = "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B"
@@ -45,7 +47,14 @@ class CallSite(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class ModelSpec:
-    """Resolved parameters for one call site."""
+    """Parameters for one call site.
+
+    `seed` is `None` in the table below and filled in by `spec_for()`: every
+    site's seed is derived from the single root seed (`BEDLAM_SEED`), so one
+    knob reproduces a whole run. `thinking` toggles Nemotron 3's reasoning
+    mode through the chat template; it is off everywhere because every call
+    site asks for a small JSON object and the demo runs under three minutes.
+    """
 
     model: str
     temperature: float
@@ -53,6 +62,7 @@ class ModelSpec:
     rationale: str
     seed: int | None = None
     fallback: str | None = None
+    thinking: bool = False
 
 
 CALL_SITES: Final[dict[CallSite, ModelSpec]] = {
@@ -95,7 +105,6 @@ CALL_SITES: Final[dict[CallSite, ModelSpec]] = {
         model=SUPER,
         temperature=0.0,
         max_tokens=1024,
-        seed=1729,
         fallback=NANO,
         rationale="Must reproduce: a judge running this build sees what the video shows.",
     ),
@@ -109,11 +118,11 @@ CALL_SITES: Final[dict[CallSite, ModelSpec]] = {
 }
 
 
-def spec_for(site: CallSite) -> ModelSpec:
-    """Resolve the parameters for a call site.
+def spec_for(site: CallSite, *, root_seed: int) -> ModelSpec:
+    """Resolve the parameters for a call site, seed included.
 
     Raises:
         KeyError: if a call site has no entry. Adding a call site without
             adding its spec here is a bug, not a default.
     """
-    return CALL_SITES[site]
+    return replace(CALL_SITES[site], seed=derive(root_seed, f"model:{site.value}"))

@@ -1,0 +1,13 @@
+--- a/backend/src/infrastructure/redis.py
++++ b/backend/src/infrastructure/redis.py
+@@ -14,6 +14,10 @@
+         db=db,
+         password=password,
+         socket_timeout=timeout,
++        # A connect that hangs must fail as fast as a read that hangs.
++        socket_connect_timeout=timeout,
++        retry_on_timeout=True,
++        health_check_interval=30,
+         max_connections=pool_size,
+         decode_responses=False,
+     )
