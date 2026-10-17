@@ -23,6 +23,32 @@ badges of either kind.
 
 ---
 
+## Session [2026-10-17-2200]
+
+- **Start status:** Phase 2 decision chain built and verified offline
+  (`36012ea`, 27 tests passing). Live three-run determinism check still
+  pending.
+- **End status:** A read-only bug hunt over the whole codebase found three
+  confirmed defects and one suspected. All three confirmed defects are fixed
+  with regression tests; 39 tests pass, lint and format clean. Still open,
+  unverified against a live Toxiproxy: a toxic left behind by a killed run
+  may make the next injection of the same fault fail with HTTP 409. The live
+  Phase 2 determinism check is still pending.
+- **Badges:**
+  - 🐛 Bug fix — `bedlam/trace.py`: a run that failed mid-cycle crashed
+    while writing its trace (`KeyError: 'selection'`), losing the trace file,
+    masking the real error and skipping transport cleanup. Partial cycles are
+    now kept in the trace but left out of the fault and specialist sequences.
+  - 🐛 Bug fix — `bedlam/topology.py`: `BEDLAM_API_URL` with a trailing
+    slash or a path crashed every `bedlam` import. The URL is now parsed with
+    `urllib.parse.urlsplit`; unusable URLs fail with a clear message.
+  - 🐛 Bug fix — `bedlam/topology.py`, `bedlam/probes/api.py`: an `https`
+    API URL without a port resolved to port 80 and was probed over `http`.
+    The default port now follows the scheme, and the probe uses a new
+    `base_url` on the endpoint, which also keeps IPv6 hosts bracketed.
+  - 🆕 Addition — `tests/test_topology.py` and a failed-run trace test in
+    `tests/test_loop.py`, covering the three fixes above.
+
 ## Session [2026-10-16-2225]
 
 - **Start status:** Phase 1 complete (`900dd61`). Phase 2 (intelligence

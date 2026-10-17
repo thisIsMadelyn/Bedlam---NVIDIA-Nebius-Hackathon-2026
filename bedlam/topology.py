@@ -13,6 +13,7 @@ import os
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Final
+from urllib.parse import urlsplit
 
 
 class Layer(StrEnum):
@@ -30,6 +31,9 @@ class LayerEndpoint:
     `proxy_name` is the Toxiproxy proxy this layer is faulted through. It is
     `None` for the API layer: Phase 1 fronts only Postgres and Redis, per
     PLAN.md -- the API layer has no fault primitive of its own yet.
+
+    `base_url` is set only for layers reached over HTTP (the API): scheme,
+    host and port, ready to append a path to.
     """
 
     layer: Layer
@@ -37,6 +41,7 @@ class LayerEndpoint:
     port: int
     proxy_name: str | None
     description: str
+    base_url: str | None = None
 
 
 def _endpoint(
@@ -56,10 +61,21 @@ def _endpoint(
     )
 
 
+_DEFAULT_PORTS: Final = {"http": 80, "https": 443}
+
+
 def _build_topology() -> dict[Layer, LayerEndpoint]:
     api_url = os.environ.get("BEDLAM_API_URL", "http://localhost:8000")
-    api_host = api_url.split("://", 1)[-1].split(":")[0]
-    api_port = int(api_url.rsplit(":", 1)[-1]) if ":" in api_url.split("://", 1)[-1] else 80
+    # urlsplit needs a scheme to find the host; a bare "host:port" gets one.
+    parts = urlsplit(api_url if "://" in api_url else f"http://{api_url}")
+    if parts.scheme not in _DEFAULT_PORTS:
+        raise ValueError(f"BEDLAM_API_URL must be http or https: {api_url!r}")
+    if not parts.hostname:
+        raise ValueError(f"BEDLAM_API_URL has no host: {api_url!r}")
+    api_host = parts.hostname
+    api_port = parts.port or _DEFAULT_PORTS[parts.scheme]
+    # An IPv6 literal needs its brackets back once it is part of a URL.
+    url_host = f"[{api_host}]" if ":" in api_host else api_host
 
     return {
         Layer.API: LayerEndpoint(
@@ -68,6 +84,7 @@ def _build_topology() -> dict[Layer, LayerEndpoint]:
             port=api_port,
             proxy_name=None,
             description="FastAPI app, probed directly over HTTP. Not fronted by Toxiproxy.",
+            base_url=f"{parts.scheme}://{url_host}:{api_port}",
         ),
         Layer.DB: _endpoint(
             Layer.DB,

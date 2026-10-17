@@ -56,8 +56,12 @@ class Trace:
             "started_at": self.started_at,
             "outcome": self.outcome,
             "error": self.error,
-            "fault_sequence": [c["selection"]["fault"]["id"] for c in self.cycles],
-            "specialist_sequence": [c["specialist"] for c in self.cycles],
+            # A failed run can end mid-cycle, before routing or selection ran.
+            # Only cycles that reached each step contribute to its sequence.
+            "fault_sequence": [
+                c["selection"]["fault"]["id"] for c in self.cycles if "selection" in c
+            ],
+            "specialist_sequence": [c["specialist"] for c in self.cycles if "specialist" in c],
             "model_map": {
                 site.value: {
                     "model": spec.model,

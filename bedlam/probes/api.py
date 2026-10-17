@@ -17,7 +17,7 @@ from bedlam.topology import Layer, endpoint_for
 
 async def probe(*, timeout_s: float = DEFAULT_TIMEOUT_S) -> ProbeResult:
     endpoint = endpoint_for(Layer.API)
-    url = f"http://{endpoint.host}:{endpoint.port}/health"
+    url = f"{endpoint.base_url}/health"
 
     started = time.perf_counter()
     try:

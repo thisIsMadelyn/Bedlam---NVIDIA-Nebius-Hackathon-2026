@@ -15,6 +15,7 @@ from fakes import (
     probe_for,
 )
 
+from bedlam import loop
 from bedlam.loop import MAX_CYCLES, LoopDeps, run
 from bedlam.models.client import ModelClient
 from bedlam.patches import ScriptedPatchSource
@@ -77,3 +78,43 @@ def test_cycle_two_searches_away_from_what_cycle_one_searched(tmp_path: Path) ->
 def test_same_seed_same_fault_sequence_three_times(tmp_path: Path) -> None:
     sequences = [_run_once(1729, tmp_path / f"run{i}.json")[0]["fault_sequence"] for i in range(3)]
     assert sequences[0] == sequences[1] == sequences[2]
+
+
+class _ClosingTransport(FakeTransport):
+    closed = False
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+class _FailingSearchBackend:
+    async def search(self, query: str) -> dict:
+        raise RuntimeError("tavily is down")
+
+
+class _ToxiproxyContext(FakeToxiproxy):
+    async def __aenter__(self) -> _ToxiproxyContext:
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        return None
+
+
+def test_failure_mid_cycle_still_writes_a_failed_trace(tmp_path: Path, monkeypatch) -> None:
+    transport = _ClosingTransport(plausible_model())
+    toxiproxy = _ToxiproxyContext()
+    monkeypatch.setattr(loop, "OpenAITransport", lambda: transport)
+    monkeypatch.setattr(loop, "TavilyBackend", _FailingSearchBackend)
+    monkeypatch.setattr(loop, "ToxiproxyClient", lambda: toxiproxy)
+    monkeypatch.setattr(loop, "snapshot", probe_for(toxiproxy))
+    trace_path = tmp_path / "trace.json"
+
+    code = asyncio.run(loop._headless(1729, loop.DEFAULT_PATCH_DIR, trace_path))
+
+    assert code == 1
+    trace = json.loads(trace_path.read_text(encoding="utf-8"))
+    assert trace["outcome"] == "failed"
+    assert trace["error"] == "RuntimeError: tavily is down"
+    assert len(trace["cycles"]) == 1, "the partial cycle belongs in the trace"
+    assert trace["fault_sequence"] == []
+    assert transport.closed
