@@ -23,6 +23,25 @@ badges of either kind.
 
 ---
 
+## Session [2026-10-19-1051]
+
+- **Start status:** Phase 2 bug fixes committed (`0ebbc9c`, 39 tests
+  passing). Working tree clean. Still open: the suspected HTTP 409 on a
+  leftover Toxiproxy toxic, and the live Phase 2 determinism check.
+- **End status:** Ran `make smoke` live. Every model id reached Token
+  Factory and got HTTP 401 back, because the local `.env` still holds the
+  placeholder `NEBIUS_API_KEY`. The Tavily smoke never ran because `make`
+  stopped at the first failure. The smoke script now reports a total
+  failure cleanly. A live smoke run is still pending a real key. The open
+  items from the previous session are unchanged.
+- **Badges:**
+  - 🐛 Bug fix — `scripts/smoke_nebius.py`: when every model failed, the
+    raw-response dump crashed with `UnboundLocalError: resp` and hid the
+    clean failure summary. When only the last model failed, the dump
+    showed an earlier model's response under the wrong label. It now dumps
+    the last successful response, names its model, and is skipped when no
+    call succeeded.
+
 ## Session [2026-10-17-2200]
 
 - **Start status:** Phase 2 decision chain built and verified offline

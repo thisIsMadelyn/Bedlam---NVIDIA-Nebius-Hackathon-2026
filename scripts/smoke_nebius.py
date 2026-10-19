@@ -16,6 +16,7 @@ import time
 
 from dotenv import load_dotenv
 from openai import OpenAI
+from openai.types.chat import ChatCompletion
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -35,6 +36,7 @@ def main() -> int:
 
     client = OpenAI(api_key=key, base_url=base_url)
     failures = 0
+    last_ok: tuple[str, ChatCompletion] | None = None
 
     for model in ALL_KNOWN_MODELS:
         in_use = "in use" if model in MODELS else "unused"
@@ -60,10 +62,13 @@ def main() -> int:
         print(f"      content={content!r}")
         if usage:
             print(f"      tokens in={usage.prompt_tokens} out={usage.completion_tokens}")
+        last_ok = (model, resp)
 
-    print()
-    print("--- raw response, last model ---")
-    print(json.dumps(resp.model_dump(), indent=2, default=str))
+    if last_ok:
+        last_model, last_resp = last_ok
+        print()
+        print(f"--- raw response, last successful model: {last_model} ---")
+        print(json.dumps(last_resp.model_dump(), indent=2, default=str))
 
     print()
     if failures:
