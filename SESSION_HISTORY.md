@@ -23,6 +23,49 @@ badges of either kind.
 
 ---
 
+## Session [2026-10-19-2113]
+
+- **Start status:** `478a3be`, working tree clean, 39 tests passing. Open:
+  the suspected HTTP 409 on a leftover Toxiproxy toxic, and the live
+  Phase 2 determinism check.
+- **End status:** The leftover-toxic bug was reproduced live and fixed
+  (`075ef00`). The live determinism check failed: three runs with seed
+  1729 gave three different fault sequences, and one run crashed. Root
+  cause: Token Factory returns different outputs for identical requests at
+  temperature 0 with a fixed seed (layer classification on one frozen
+  result set labelled 5/6 one way, 1/6 another). The crash is fixed
+  (`e24547a`) and synthesis now runs at temperature 0 (`a9ab11b`). 42
+  tests pass, lint and format clean. Measured on frozen inputs: fault
+  selection alone is stable (8/8); synthesis keeps a stable eligible pool
+  (5/5) but rewords its hypotheses (3 distinct of 5), and the pick follows
+  the wording (4/1). A tier-rating selection variant was tried and dropped:
+  it rated every fault "medium", which would hand the choice to the RNG.
+  Still open, deferred to a later session:
+  - Replay test: record one live run's model and Tavily responses, replay
+    them, and assert the same fault sequence.
+  - Reword the PLAN.md Phase 2 Done-when item from "same seed, same fault
+    sequence across three runs" to reproducibility given recorded inputs.
+  - Deferred, may not be done: show fault selection only the structured
+    candidate fields, not the hypothesis prose.
+- **Badges:**
+  - 🐛 Bug fix — A run killed while a fault was live left its toxic in
+    Toxiproxy. The next run failed with HTTP 409 when re-creating the same
+    toxic name, or failed the baseline with a misleading "Run `make up`"
+    message. The loop now clears every toxic on the proxied layers before
+    the baseline probe and logs what it removed. `fault.apply()` moved
+    inside the `try`, so a toxic is removed even when its create times out
+    on the client side. The primitives docstring no longer claims that
+    re-injection replaces a toxic.
+  - 🐛 Bug fix — On an invalid model reply, the retry resent the identical
+    request, which at temperature 0 returned the same invalid answer. Nano
+    sites have no fallback, so the run failed (query formulation copied
+    the prompt's example failure term and repeated a previous query). The
+    retry now includes the rejected reply and the parser's reason. A
+    fallback model still gets the original request.
+  - 🐛 Bug fix — Synthesis ran at temperature 0.3, so the eligible fault
+    pool changed from run to run. It now runs at 0.0, in the model map and
+    the PLAN.md table.
+
 ## Session [2026-10-19-1051]
 
 - **Start status:** Phase 2 bug fixes committed (`0ebbc9c`, 39 tests
