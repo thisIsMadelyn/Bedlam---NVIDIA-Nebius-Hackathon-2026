@@ -47,6 +47,9 @@ def main() -> int:
                 messages=[{"role": "user", "content": PROMPT}],
                 max_tokens=16,
                 temperature=0.0,
+                # Same as ModelClient: with thinking on, the reasoning trace
+                # eats the whole 16-token budget and the reply comes back empty.
+                extra_body={"chat_template_kwargs": {"enable_thinking": False}},
             )
         except Exception as exc:  # noqa: BLE001 - smoke test reports, never raises
             elapsed = time.perf_counter() - started

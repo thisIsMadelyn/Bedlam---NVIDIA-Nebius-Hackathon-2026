@@ -28,12 +28,11 @@ badges of either kind.
 - **Start status:** Phase 2 bug fixes committed (`0ebbc9c`, 39 tests
   passing). Working tree clean. Still open: the suspected HTTP 409 on a
   leftover Toxiproxy toxic, and the live Phase 2 determinism check.
-- **End status:** Ran `make smoke` live. Every model id reached Token
-  Factory and got HTTP 401 back, because the local `.env` still holds the
-  placeholder `NEBIUS_API_KEY`. The Tavily smoke never ran because `make`
-  stopped at the first failure. The smoke script now reports a total
-  failure cleanly. A live smoke run is still pending a real key. The open
-  items from the previous session are unchanged.
+- **End status:** `make smoke` passes live. All four model ids are
+  callable with their exact casing and each replies `ok`. Tavily returns
+  five usable results for a dependency-targeted asyncpg query. Earlier
+  runs got HTTP 401 until real keys were in `.env`. The open items from
+  the previous session are unchanged.
 - **Badges:**
   - 🐛 Bug fix — `scripts/smoke_nebius.py`: when every model failed, the
     raw-response dump crashed with `UnboundLocalError: resp` and hid the
@@ -41,6 +40,11 @@ badges of either kind.
     showed an earlier model's response under the wrong label. It now dumps
     the last successful response, names its model, and is skipped when no
     call succeeded.
+  - 🐛 Bug fix — `scripts/smoke_nebius.py`: the smoke call left Nemotron's
+    thinking mode on, so the reasoning trace used the whole 16-token budget.
+    Super and Nano returned empty replies, but the script still reported
+    OK. It now sends `enable_thinking: False`, the same way `ModelClient`
+    does.
 
 ## Session [2026-10-17-2200]
 
