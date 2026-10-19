@@ -50,6 +50,39 @@ def test_invalid_output_is_retried_like_an_error() -> None:
     assert [r.outcome for r in client.records] == ["invalid", "ok"]
 
 
+def test_retry_after_invalid_output_carries_the_rejection_reason() -> None:
+    # At temperature 0 a bare retry gets the same bad answer back, so the
+    # retry must show the model its reply and why it was rejected.
+    replies = iter([{"ok": "first"}, {"ok": "second"}])
+
+    def parse(value):
+        if value["ok"] == "first":
+            raise ValueError("need 2 new queries on distinct dependencies")
+        return value["ok"]
+
+    client, transport = _client(lambda _ctx, _model: next(replies))
+    result = asyncio.run(
+        client.json(CallSite.TAVILY_QUERY_FORMULATION, system="s", user="{}", parse=parse)
+    )
+
+    assert result == "second"
+    first, retry = transport.messages
+    assert len(first) == 2
+    assert retry[:2] == first
+    assert retry[2] == {"role": "assistant", "content": '{"ok": "first"}'}
+    assert retry[3]["role"] == "user"
+    assert "need 2 new queries on distinct dependencies" in retry[3]["content"]
+
+
+def test_fallback_model_gets_the_original_request_not_the_correction() -> None:
+    def handler(_ctx, model):
+        return "not json" if model == SUPER else {"ok": True}
+
+    client, transport = _client(handler)
+    assert _ask(client) is True
+    assert [len(m) for m in transport.messages] == [2, 4, 2]
+
+
 def test_nano_site_has_no_fallback_and_raises_when_exhausted() -> None:
     client, transport = _client(lambda _ctx, _model: {"wrong": 1})
     with pytest.raises(ModelCallError):

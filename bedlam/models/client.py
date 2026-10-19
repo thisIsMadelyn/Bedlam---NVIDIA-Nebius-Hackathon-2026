@@ -27,6 +27,7 @@ from typing import Any, Protocol
 
 from openai import AsyncOpenAI
 
+from bedlam import prompts
 from bedlam.logging import get_logger, log_event
 from bedlam.models.map import CallSite, spec_for
 
@@ -181,7 +182,10 @@ class ModelClient:
 
         `parse` raises `ValueError` (or `KeyError`/`TypeError`) on output that
         does not fit the site's contract; that counts as a failed attempt and
-        is retried, then falls back, exactly like a transport error.
+        is retried, then falls back, exactly like a transport error. The
+        retry carries the rejected reply and the reason it was rejected: at
+        temperature 0 a bare retry repeats the same request and usually gets
+        the same invalid answer back.
 
         Raises:
             ModelCallError: if every model in the chain is exhausted.
@@ -205,6 +209,9 @@ class ModelClient:
                         }
                     },
                 )
+            # A correction is for the model that produced the bad reply; a
+            # fallback model starts from the original request.
+            attempt_messages = messages
             for attempt in range(1, self._attempts + 1):
                 started = time.perf_counter()
                 response: ChatResponse | None = None
@@ -212,7 +219,7 @@ class ModelClient:
                     response = await self._transport(
                         site=site,
                         model=model,
-                        messages=messages,
+                        messages=attempt_messages,
                         temperature=spec.temperature,
                         max_tokens=spec.max_tokens,
                         seed=spec.seed,
@@ -232,6 +239,16 @@ class ModelClient:
                         "invalid",
                         last_error,
                     )
+                    if response is not None:
+                        attempt_messages = [
+                            *messages,
+                            {"role": "assistant", "content": response.content},
+                            {
+                                "role": "user",
+                                "content": f"{prompts.load('invalid_output_retry')}\n\n"
+                                f"Reason: {exc}",
+                            },
+                        ]
                     continue
                 except Exception as exc:  # noqa: BLE001 - any transport failure is retried
                     last_error = f"{type(exc).__name__}: {exc}"

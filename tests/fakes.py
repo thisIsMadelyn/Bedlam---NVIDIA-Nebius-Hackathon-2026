@@ -25,6 +25,7 @@ class FakeTransport:
     def __init__(self, handlers: dict[CallSite, Handler]) -> None:
         self._handlers = handlers
         self.calls: list[tuple[CallSite, str, int | None]] = []
+        self.messages: list[list[dict[str, str]]] = []
 
     async def __call__(
         self,
@@ -38,6 +39,7 @@ class FakeTransport:
         thinking: bool,
     ) -> ChatResponse:
         self.calls.append((site, model, seed))
+        self.messages.append(messages)
         answer = self._handlers[site](json.loads(messages[1]["content"]), model)
         if isinstance(answer, Exception):
             raise answer
