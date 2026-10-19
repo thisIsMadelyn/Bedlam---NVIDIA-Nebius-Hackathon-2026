@@ -1,4 +1,4 @@
-.PHONY: smoke lint fmt up down run headless test
+.PHONY: smoke lint fmt up down run headless test prove-routing
 
 smoke:
 	python scripts/smoke_nebius.py
@@ -23,6 +23,10 @@ run:
 
 headless:
 	python -m bedlam.loop --headless
+
+# Phase 2 gate: live Tavily output changes which specialist is selected.
+prove-routing:
+	python scripts/prove_routing.py
 
 test:
 	python -m pytest

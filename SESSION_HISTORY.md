@@ -47,7 +47,22 @@ badges of either kind.
     sequence across three runs" to reproducibility given recorded inputs.
   - Deferred, may not be done: show fault selection only the structured
     candidate fields, not the hypothesis prose.
+  - Layer classification mislabels Redis results: across two live runs
+    Nano labelled redis-py issues `db`, although the prompt names Redis and
+    redis-py as `cache`. The cache specialist is starved as a result.
+
+  Later in the session, `make prove-routing` showed live that Tavily output
+  changes the specialist. Three searches gave two distinct specialists
+  (db, db, api), and dropping the winning layer's results from the merged
+  set moved the route from db to api. It held on a second live run. Three
+  Phase 2 Done-when items are now ticked in PLAN.md; the determinism item
+  stays open.
 - **Badges:**
+  - 🆕 Addition — `scripts/prove_routing.py` and `make prove-routing`: runs
+    the loop's real search, classify and route path against live Tavily and
+    live Nano, with the model side held fixed. It writes the evidence to
+    `traces/routing-proof.json` and exits non-zero if routing does not
+    follow the search output.
   - 🐛 Bug fix — A run killed while a fault was live left its toxic in
     Toxiproxy. The next run failed with HTTP 409 when re-creating the same
     toxic name, or failed the baseline with a misleading "Run `make up`"

@@ -148,10 +148,10 @@ Artifacts:
 - `bedlam/select.py` — fault selection constrained by blast radius and cycle history
 
 Done when:
-- [ ] A full two-cycle run completes headless and writes a structured JSON trace
+- [x] A full two-cycle run completes headless and writes a structured JSON trace
 - [ ] The same seed produces the same fault sequence across three consecutive runs
-- [ ] Every model call appears in the trace with its site and model name
-- [ ] Tavily output demonstrably changes which specialist is selected
+- [x] Every model call appears in the trace with its site and model name
+- [x] Tavily output demonstrably changes which specialist is selected
 
 Risk: Tavily queries returning noise. Mitigation is in the query builder — search
 `asyncpg 0.29 connection pool`, never `FastAPI boilerplate bug`.
