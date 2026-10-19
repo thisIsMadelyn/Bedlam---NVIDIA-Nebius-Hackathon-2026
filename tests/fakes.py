@@ -187,7 +187,12 @@ class FakeToxiproxy:
         self.active: dict[str, str] = {}  # toxic name -> proxy
         self.applied: list[str] = []
 
+    async def list_toxics(self, proxy: str) -> list[dict[str, Any]]:
+        return [{"name": name} for name, p in self.active.items() if p == proxy]
+
     async def create_toxic(self, proxy: str, *, name: str, **_: Any) -> dict[str, Any]:
+        # Real Toxiproxy answers 409 Conflict for a name already in use.
+        assert name not in self.active, f"409 Conflict: toxic {name} already exists"
         assert not self.active, f"concurrent faults: {self.active} + {name}"
         self.active[name] = proxy
         self.applied.append(name)
@@ -195,6 +200,12 @@ class FakeToxiproxy:
 
     async def delete_toxic(self, proxy: str, name: str) -> None:
         self.active.pop(name, None)
+
+    async def clear_toxics(self, proxy: str) -> list[str]:
+        names = [t["name"] for t in await self.list_toxics(proxy)]
+        for name in names:
+            await self.delete_toxic(proxy, name)
+        return names
 
 
 def probe_for(toxiproxy: FakeToxiproxy):

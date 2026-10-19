@@ -40,7 +40,7 @@ from bedlam.search.query import formulate
 from bedlam.search.tavily import SearchClient, TavilyBackend, merge
 from bedlam.select import select_fault
 from bedlam.specialists import SPECIALISTS, Candidate
-from bedlam.topology import Layer
+from bedlam.topology import TOPOLOGY, Layer
 from bedlam.trace import Trace, snapshot_to_dict
 
 _LOG = get_logger("bedlam.loop")
@@ -67,6 +67,18 @@ class LoopDeps:
 
 async def run(deps: LoopDeps, trace: Trace) -> Trace:
     """Run every cycle, filling `trace` as it goes. Returns the same trace."""
+    # A run killed mid-fault leaves its toxic live in Toxiproxy. Clear it
+    # first: it would skew the baseline, and re-creating the same name is 409.
+    for endpoint in TOPOLOGY.values():
+        if endpoint.proxy_name is None:
+            continue
+        leftover = await deps.faults.clear_toxics(endpoint.proxy_name)
+        if leftover:
+            _LOG.warning(
+                "cleared leftover toxics",
+                extra={"fields": {"proxy": endpoint.proxy_name, "toxics": leftover}},
+            )
+
     baseline = await deps.probe()
     trace.baseline = snapshot_to_dict(baseline)
     down = sorted(layer.value for layer, r in baseline.items() if r.status is not HealthStatus.UP)
@@ -140,8 +152,11 @@ async def run(deps: LoopDeps, trace: Trace) -> Trace:
         record["blast_radius"] = sorted(layer.value for layer in option.blast_radius)
         fault = option.build()
         log_event(_LOG, "injecting", cycle=cycle, fault=option.id, blast=record["blast_radius"])
-        await fault.apply(deps.faults)
         try:
+            # Inside the try: a create that lands on the server but times out
+            # on the client must still be removed. Removing a toxic that was
+            # never created is a 404, which delete_toxic treats as done.
+            await fault.apply(deps.faults)
             during = await deps.probe()
             record["probe_during_fault"] = snapshot_to_dict(during)
             symptom = await classify_probe(deps.models, during)

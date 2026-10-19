@@ -24,8 +24,10 @@ from bedlam.search.tavily import SearchClient
 from bedlam.trace import Trace
 
 
-def _run_once(root_seed: int, trace_path: Path) -> tuple[dict, FakeToxiproxy, FakeSearchBackend]:
-    toxiproxy = FakeToxiproxy()
+def _run_once(
+    root_seed: int, trace_path: Path, toxiproxy: FakeToxiproxy | None = None
+) -> tuple[dict, FakeToxiproxy, FakeSearchBackend]:
+    toxiproxy = toxiproxy or FakeToxiproxy()
     backend = FakeSearchBackend(default_search_results())
     models = ModelClient(FakeTransport(plausible_model()), root_seed=root_seed, backoff_s=0.0)
     search = SearchClient(backend)
@@ -78,6 +80,20 @@ def test_cycle_two_searches_away_from_what_cycle_one_searched(tmp_path: Path) ->
 def test_same_seed_same_fault_sequence_three_times(tmp_path: Path) -> None:
     sequences = [_run_once(1729, tmp_path / f"run{i}.json")[0]["fault_sequence"] for i in range(3)]
     assert sequences[0] == sequences[1] == sequences[2]
+
+
+def test_toxic_left_by_a_killed_run_is_cleared_before_the_baseline(tmp_path: Path) -> None:
+    clean, first, _ = _run_once(1729, tmp_path / "clean.json")
+    # A killed run leaves the toxic the same seed is about to re-create.
+    killed = FakeToxiproxy()
+    killed.active[first.applied[0]] = "postgres" if first.applied[0].startswith("db") else "redis"
+
+    trace, toxiproxy, _ = _run_once(1729, tmp_path / "rerun.json", toxiproxy=killed)
+
+    assert trace["outcome"] == "completed"
+    assert trace["fault_sequence"] == clean["fault_sequence"]
+    assert all(r["status"] == "up" for r in trace["baseline"].values())
+    assert not toxiproxy.active
 
 
 class _ClosingTransport(FakeTransport):

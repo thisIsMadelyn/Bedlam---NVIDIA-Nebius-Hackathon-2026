@@ -92,3 +92,14 @@ class ToxiproxyClient:
         if resp.status_code != 404:
             resp.raise_for_status()
         log_event(_LOG, "toxic removed", proxy=proxy, toxic=name)
+
+    async def clear_toxics(self, proxy: str) -> list[str]:
+        """Delete every toxic on `proxy`. Returns the names it removed.
+
+        Per proxy rather than `POST /reset`: reset also re-enables every
+        proxy, which would silently undo state this client did not create.
+        """
+        names = [toxic["name"] for toxic in await self.list_toxics(proxy)]
+        for name in names:
+            await self.delete_toxic(proxy, name)
+        return names

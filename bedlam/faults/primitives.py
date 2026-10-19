@@ -3,8 +3,9 @@
 Each primitive is a Toxiproxy toxic under the hood. A `Fault` names exactly
 one toxic on exactly one proxy -- one fault, one layer, per the architecture
 invariant in CLAUDE.md. The toxic name is deterministic (`f"{layer}_{kind}"`),
-never a uuid, so a run is reproducible and a second injection on the same
-layer replaces the first instead of stacking.
+never a uuid, so a run is reproducible. Toxiproxy does not replace a toxic
+whose name is taken -- it answers 409 Conflict -- so the loop clears any
+toxics left behind by a killed run before it takes its baseline.
 """
 
 from __future__ import annotations
