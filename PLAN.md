@@ -70,7 +70,7 @@ Tavily architectural rather than decorative, and it is the Stage One argument.
 | Tavily query formulation | Nano | 0.0 | structured extraction |
 | Layer classification of results | Nano | 0.0 | routes to specialist |
 | Diff analysis | Super | 0.1 | reasoning over code |
-| Tavily synthesis → candidate faults | Super | 0.3 | messy prose → hypotheses |
+| Tavily synthesis → candidate faults | Super | 0.0 | messy prose → hypotheses; feeds the eligible pool, so unsampled |
 | Fault selection | Super | 0.0 + fixed seed | must reproduce |
 | Trade-off escalation | Super | 0.4 | judge-visible |
 | Bedlam's voice | no model — templates | — | determinism, zero latency |

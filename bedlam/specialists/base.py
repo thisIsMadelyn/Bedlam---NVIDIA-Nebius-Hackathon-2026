@@ -1,6 +1,6 @@
 """What a specialist is: a prompt plus a tool set, turning evidence into faults.
 
-Synthesis (Super, temp 0.3) reads the live search results the router sent
+Synthesis (Super, temp 0.0) reads the live search results the router sent
 this specialist's way and proposes candidate faults, each grounded in a
 cited result and drawn only from the specialist's own tools. Anything
 outside the tool set, or citing a URL that was not in the evidence, is

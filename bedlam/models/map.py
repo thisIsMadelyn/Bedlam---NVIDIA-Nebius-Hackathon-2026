@@ -96,10 +96,13 @@ CALL_SITES: Final[dict[CallSite, ModelSpec]] = {
     ),
     CallSite.TAVILY_SYNTHESIS: ModelSpec(
         model=SUPER,
-        temperature=0.3,
+        temperature=0.0,
         max_tokens=2048,
         fallback=NANO,
-        rationale="Messy prose from GitHub issues into candidate faults. Needs some latitude.",
+        rationale=(
+            "Messy prose from GitHub issues into candidate faults. Temperature 0: the "
+            "candidates decide the eligible pool, and a sampled pool changes the fault."
+        ),
     ),
     CallSite.FAULT_SELECTION: ModelSpec(
         model=SUPER,
