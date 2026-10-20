@@ -23,6 +23,36 @@ badges of either kind.
 
 ---
 
+## Session [2026-10-20-2114]
+
+- **Start status:** `c62ba28`. Uncommitted: the Redis labelling fix and
+  `max_tokens` 768 from the previous session. Open: the replay test and the
+  Phase 2 determinism rewording.
+- **End status:** `9b697fe`, working tree clean apart from this entry, 48
+  tests passing, lint and format clean. Phase 2 is complete: the determinism
+  item is reworded to replay of recorded inputs and ticked, and CLAUDE.md
+  and the Phase 5 rehearsal check now say the same. PLAN.md has a new §7
+  Backlog with two TUI ideas from the judges meeting: slash commands, and
+  agent and resource usage on screen (the judges asked for the latter).
+  Still open: Nano still labels some Redis results `db` (a wrong layer, which
+  the new check does not catch), and one fault-selection rationale did not
+  match the fault it picked. Phase 3 (TUI) starts 22 Oct.
+- **Badges:**
+  - 🆕 Addition — `bedlam/replay.py`, `make record` and
+    `tests/test_replay.py`: one live run's model replies, Tavily responses
+    and probe snapshots are recorded, then replayed three times. Each replay
+    must reproduce the live fault sequence. Replay answers only
+    byte-identical requests, so a prompt or model-map change asks for a
+    re-record.
+  - 🆕 Addition — The component Nano names for each search result is
+    recorded in the trace.
+  - 🐛 Bug fix — Batched layer labels drifted by one index at the boundary
+    between two queries' results. A phpredis issue was labelled `httpx/api`,
+    and that one label routed cycle 2 to the api specialist instead of
+    cache. A label must now name a component that appears in its own
+    result. A failure is retried with the reason. If Nano keeps failing, the
+    failing labels are left out of the vote and logged, and the run goes on.
+
 ## Session [2026-10-19-2113]
 
 - **Start status:** `478a3be`, working tree clean, 39 tests passing. Open:
