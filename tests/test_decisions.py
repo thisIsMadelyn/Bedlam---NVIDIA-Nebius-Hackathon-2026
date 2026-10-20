@@ -81,6 +81,31 @@ def test_queries_never_target_the_boilerplate_or_unknown_deps(bad: dict) -> None
         _formulate({"queries": [bad, good]})
 
 
+def test_a_repeated_query_is_named_in_the_rejection_so_the_retry_can_fix_it() -> None:
+    previous = "asyncpg 0.31.0 pool exhaustion not recovering"
+    repeat = {"dependency": "asyncpg", "failure_term": "pool exhaustion not recovering"}
+    redis = {"dependency": "redis", "failure_term": "socket connect hangs forever"}
+    fixed = {"dependency": "asyncpg", "failure_term": "prepared statement cache invalid"}
+    replies = iter([{"queries": [repeat, redis, dict(redis)]}, {"queries": [fixed, redis]}])
+    transport = FakeTransport({CallSite.TAVILY_QUERY_FORMULATION: lambda _c, _m: next(replies)})
+    client = ModelClient(transport, root_seed=1, backoff_s=0.0)
+    queries = asyncio.run(
+        formulate(
+            client,
+            manifest=load_manifest(),
+            history=[],
+            symptom=None,
+            analysis=None,
+            previous_queries=[previous],
+        )
+    )
+
+    assert [q.dependency for q in queries] == ["asyncpg", "redis"]
+    retry = " ".join(m["content"] for m in transport.messages[1])
+    assert "`asyncpg` + `pool exhaustion not recovering` was already searched" in retry
+    assert "two queries target `redis`" in retry
+
+
 # --- catalog and specialists ------------------------------------------------
 
 

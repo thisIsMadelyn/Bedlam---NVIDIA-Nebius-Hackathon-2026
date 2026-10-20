@@ -44,6 +44,7 @@ class SearchQuery:
 def _parser(manifest: tuple[Dependency, ...], previous: set[str]):
     def parse(value: Any) -> tuple[SearchQuery, ...]:
         queries: list[SearchQuery] = []
+        skipped: list[str] = []
         seen: set[str] = set()
         for item in value["queries"]:
             dep = lookup(manifest, str(item["dependency"]))
@@ -56,12 +57,25 @@ def _parser(manifest: tuple[Dependency, ...], previous: set[str]):
             if _BANNED_TERMS.search(term) or _BANNED_TERMS.search(dep.name):
                 raise ValueError("queries target dependencies, never the boilerplate")
             query = SearchQuery(dependency=dep.name, version=dep.version, failure_term=term)
-            if dep.name in seen or query.text in previous:
+            # A skipped query is named in the rejection: a bare "need N new
+            # queries" left Nano repeating the same mistake on its retry.
+            if query.text in previous:
+                skipped.append(
+                    f"`{dep.name}` + `{term}` was already searched in an earlier round; "
+                    "change the failure term or pick another dependency"
+                )
+                continue
+            if dep.name in seen:
+                skipped.append(f"two queries target `{dep.name}`; each needs its own dependency")
                 continue
             seen.add(dep.name)
             queries.append(query)
         if len(queries) < QUERIES_PER_CYCLE:
-            raise ValueError(f"need {QUERIES_PER_CYCLE} new queries on distinct dependencies")
+            reasons = "; ".join(skipped) or f"the reply held {len(queries)} queries"
+            raise ValueError(
+                f"need {QUERIES_PER_CYCLE} new queries on distinct dependencies, "
+                f"got {len(queries)} usable: {reasons}"
+            )
         return tuple(queries[:QUERIES_PER_CYCLE])
 
     return parse
