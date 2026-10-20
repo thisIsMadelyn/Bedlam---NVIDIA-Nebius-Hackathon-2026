@@ -34,7 +34,7 @@ from textual.app import App, ComposeResult
 from textual.containers import Vertical
 from textual.css.query import NoMatches
 from textual.widget import Widget
-from textual.widgets import RichLog, Static
+from textual.widgets import Input, RichLog, Static
 
 from bedlam import seed as seeding
 from bedlam.guide import (
@@ -152,6 +152,14 @@ class GatedPatchSource:
 
 Launch = Callable[["BedlamApp"], Awaitable[int]]
 
+# The command line's commands: name -> what /help says. Each one is a
+# `_command_<name>` method on the app. None may decide the trade-off for the
+# developer: a command that picks a side is a bug (CLAUDE.md).
+COMMANDS: Final = {
+    "help": "list these commands",
+    "patch": "hand over your fix, same as P",
+    "quit": "leave Bedlam, same as Q",
+}
 
 
 class BedlamApp(App[int]):
@@ -183,9 +191,23 @@ class BedlamApp(App[int]):
         scrollbar-size-vertical: 1; scrollbar-color: {MUTED};
         scrollbar-background: {_SURFACE}; scrollbar-color-hover: {ACCENT};
     }}
+    #command {{
+        height: 1; border: none; padding: 0 1; background: {_SURFACE}; color: {_TEXT};
+    }}
+    #command:focus {{ background: {INK}; }}
+    #command > .input--placeholder {{ color: {_SOFT}; }}
+    #command > .input--cursor {{ background: {GO}; color: {_BACKGROUND}; }}
     #footer {{ height: 1; }}
     """
-    BINDINGS = [("p", "patch", "hand over the fix"), ("q", "quit", "quit")]
+    BINDINGS = [
+        ("p", "patch", "hand over the fix"),
+        ("q", "quit", "quit"),
+        ("slash", "command", "type a command"),
+        ("escape", "leave_command", "leave the command line"),
+    ]
+    # The logs hold focus so P and Q work as keys; "/" moves to the command
+    # line, and Enter or Esc gives focus back.
+    AUTO_FOCUS = "#timeline"
 
     def __init__(
         self, root_seed: int, patches: PatchSource, launch: Launch, *, real: bool = False
@@ -233,6 +255,11 @@ class BedlamApp(App[int]):
                 agent = RichLog(id="agent", classes="panel", wrap=False)
                 agent.border_title = f"{MODELS} · which model did each step"
                 yield agent
+            yield Input(
+                id="command",
+                placeholder="press / to type a command, /help lists them",
+                select_on_focus=False,
+            )
             yield Static(id="footer")
 
     def on_mount(self) -> None:
@@ -258,6 +285,40 @@ class BedlamApp(App[int]):
 
     def attach(self, models: ModelClient, search: SearchClient) -> None:
         self._models, self._search = models, search
+
+    def action_command(self) -> None:
+        line = self.query_one("#command", Input)
+        line.value = "/"
+        line.focus()
+        line.cursor_position = len(line.value)
+
+    def action_leave_command(self) -> None:
+        line = self.query_one("#command", Input)
+        line.value = ""
+        self.query_one("#timeline", RichLog).focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        text = event.value.strip()
+        self.action_leave_command()
+        if not text:
+            return
+        name, *_ = text.lstrip("/").split(maxsplit=1) or [""]
+        self._say(f"you › {text}", style=f"bold {_TEXT}")
+        command = COMMANDS.get(name.lower())
+        if command is None:
+            self._say(f"unknown command /{name}. /help lists them", style=_SOFT)
+            return
+        getattr(self, f"_command_{name.lower()}")()
+
+    def _command_help(self) -> None:
+        for name, about in COMMANDS.items():
+            self._say(f"  /{name:<8} {about}", style=_SOFT)
+
+    def _command_patch(self) -> None:
+        self.action_patch()
+
+    def _command_quit(self) -> None:
+        self.exit()
 
     def action_patch(self) -> None:
         if self.patches.release():
@@ -467,7 +528,9 @@ class BedlamApp(App[int]):
         action = " read my fix    " if self.real else " apply the prepared fix    "
         keys.append(action, style=f"bold {GO}" if now.your_turn else _SOFT)
         keys.append(" Q ", style=f"{_TEXT} on {MUTED}")
-        keys.append(" quit", style=_SOFT)
+        keys.append(" quit    ", style=_SOFT)
+        keys.append(" / ", style=f"{_TEXT} on {MUTED}")
+        keys.append(" command", style=_SOFT)
         self.query_one("#footer", Static).update(keys)
 
         self._render_system()
