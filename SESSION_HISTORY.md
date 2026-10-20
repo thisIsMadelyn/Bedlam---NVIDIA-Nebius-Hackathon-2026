@@ -23,6 +23,35 @@ badges of either kind.
 
 ---
 
+## Session [2026-10-20-2344]
+
+- **Start status:** `8a4cbf9`, working tree clean, 85 tests passing. Phase 3
+  built but its done-when boxes not ticked; Phase 4 not started.
+- **End status:** `5aa960e`, working tree clean apart from this entry, 96
+  tests passing, lint and format clean. Phases 3 and 4 complete, every
+  done-when box ticked; the Phase 4 framing box after the developer read the
+  trade-off screen live. Replay fixture re-recorded live with the escalation
+  call. Open: Super does not always match an option's consequence fault to
+  its stated cost; the wide layout leaves the trade-off panel half empty.
+  Next: Phase 5 (rehearsal and feature freeze, Mon 26 Oct).
+- **Badges:**
+  - 🆕 Addition — `bedlam/escalation.py` and
+    `prompts/tradeoff_escalation.md`: after round 2, Super writes one
+    trade-off with two options (gain, cost, and the catalog fault under
+    which that cost is felt). Code rejects recommendation wording, a shared
+    consequence, unknown faults and text too long for 82 columns; a logged
+    templated pair stands in if every model fails.
+  - 🆕 Addition — The developer chooses with A/B or `/choose`; Bedlam never
+    picks. The chosen cost is applied once, probed and removed, and a
+    decision record is written beside the trace. Headless runs take
+    `--choice a|b`; without it the options are recorded and nothing is
+    picked.
+  - 🆕 Addition — A full-frame TRADE-OFF panel in the TUI, with NOW box,
+    voice and footer for every escalation step.
+  - 🐛 Bug fix — Round 2 could stop the run when Nano repeated a round-1
+    query on every attempt. The round now goes on with the best usable
+    queries (at least one), logged and marked `short` in the trace.
+
 ## Session [2026-10-20-2318]
 
 - **Start status:** `287c95b`, working tree clean, 48 tests passing.
