@@ -174,7 +174,13 @@ async def run(deps: LoopDeps, trace: Trace) -> Trace:
         log_event(_LOG, "injecting", cycle=cycle, fault=option.id, blast=record["blast_radius"])
         emit(
             "injecting",
-            {"cycle": cycle, "fault": option.id, "blast_radius": record["blast_radius"]},
+            {
+                "cycle": cycle,
+                "fault": option.id,
+                "layer": option.layer.value,
+                "kind": option.kind.value,
+                "blast_radius": record["blast_radius"],
+            },
         )
         try:
             # Inside the try: a create that lands on the server but times out

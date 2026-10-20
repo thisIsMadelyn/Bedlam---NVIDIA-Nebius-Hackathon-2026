@@ -37,6 +37,7 @@ from bedlam.models.map import LABELS
 from bedlam.patches import DEFAULT_PATCH_DIR, Patch, PatchSource, ScriptedPatchSource
 from bedlam.search.tavily import SearchClient
 from bedlam.topology import Layer
+from bedlam.voice import Voice
 
 WIDTH: Final = 82
 # Border (2) + horizontal padding (2) + scrollbar (1), with one column spare.
@@ -131,6 +132,7 @@ class BedlamApp(App[int]):
         super().__init__()
         self.root_seed = root_seed
         self.patches = GatedPatchSource(patches)
+        self._voice = Voice(root_seed)
         self._launch = launch
         self._models: ModelClient | None = None
         self._search: SearchClient | None = None
@@ -203,6 +205,10 @@ class BedlamApp(App[int]):
         handler = getattr(self, f"_on_{kind}", None)
         if handler is not None:
             handler(fields)
+        line = self._voice.say(kind, fields)
+        if line:
+            for part in wrap("» " + line, indent=2):
+                self._say(part, style="italic magenta")
         self._render_chrome()
 
     def _on_baseline(self, fields: dict[str, Any]) -> None:
@@ -244,7 +250,7 @@ class BedlamApp(App[int]):
             self._say(line, style="yellow")
 
     def _on_awaiting_patch(self, fields: dict[str, Any]) -> None:
-        self._say("your move. patch it, then press p", style="bold magenta")
+        self._say("waiting for your patch. press p when it is in", style="bold")
         self._footer("waiting for your patch. p when it is in, q quits")
 
     def _on_patched(self, fields: dict[str, Any]) -> None:
