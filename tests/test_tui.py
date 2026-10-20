@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+import pytest
 from fakes import (
     FakeSearchBackend,
     FakeToxiproxy,
@@ -21,9 +22,10 @@ from bedlam.patches import ScriptedPatchSource
 from bedlam.search.manifest import load_manifest
 from bedlam.search.tavily import SearchClient
 from bedlam.trace import Trace
-from bedlam.tui import WIDTH, BedlamApp, GatedPatchSource
+from bedlam.tui import ACCENT, WIDTH, BedlamApp, GatedPatchSource
 
 SIZE = (WIDTH, 30)
+WIDE = (200, 45)
 LAYERS = ("api", "db", "cache")
 
 
@@ -65,16 +67,20 @@ async def _drive(app: BedlamApp, pilot, screenshot: Path | None = None) -> None:
         app.save_screenshot(filename=screenshot.name, path=str(screenshot.parent))
 
 
-def test_a_full_run_renders_inside_82_columns(tmp_path: Path) -> None:
+@pytest.mark.parametrize("size", [SIZE, WIDE], ids=["82 minimum", "wide"])
+def test_a_full_run_fills_the_terminal_and_never_clips(tmp_path: Path, size) -> None:
     async def scenario() -> BedlamApp:
         app = _app()
-        async with app.run_test(size=SIZE) as pilot:
+        async with app.run_test(size=size) as pilot:
             await _drive(app, pilot, tmp_path / "tui.svg")
             for log in app.query(RichLog):
                 inner = log.scrollable_content_region.width
                 widest = max((strip.cell_length for strip in log.lines), default=0)
                 assert widest <= inner, f"{log.id} line is {widest} cells, room for {inner}"
-            assert app.query_one("#frame").size.width == WIDTH
+            assert app.query_one("#frame").size.width == size[0]
+            body = app.query_one("#body")
+            side_by_side = size[0] >= 2 * WIDTH + 2
+            assert (body.styles.layout.name == "horizontal") == side_by_side
         return app
 
     app = asyncio.run(scenario())
@@ -148,5 +154,22 @@ def test_bedlam_says_holds_the_latest_line_and_marks_quotes() -> None:
             await pilot.pause(0.1)
             assert "Why so serious?" not in str(says.render())
             assert not app._voice.quoted
+
+    asyncio.run(scenario())
+
+
+def test_bedlam_says_text_is_never_drawn_on_its_own_colour() -> None:
+    async def scenario() -> None:
+        app = BedlamApp(1729, ScriptedPatchSource(), lambda app: asyncio.sleep(3600))
+        async with app.run_test(size=SIZE) as pilot:
+            app.on_loop_event("cycle_started", {"cycle": 1})  # a plain, lavender voice line
+            await pilot.pause(0.2)
+            row = app.query_one("#says").region.y
+            strip = app.screen._compositor.render_strips()[row]
+            spoken = [s for s in strip if s.text.strip() and "BEDLAM" not in s.text]
+            assert spoken, "no voice line on the BEDLAM SAYS row"
+            for segment in spoken:
+                assert segment.style.color != segment.style.bgcolor, repr(segment.text)
+                assert segment.style.bgcolor.name.lower() != ACCENT.lower(), "label bg leaked"
 
     asyncio.run(scenario())
