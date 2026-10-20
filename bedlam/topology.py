@@ -109,6 +109,14 @@ def _build_topology() -> dict[Layer, LayerEndpoint]:
 
 TOPOLOGY: Final[dict[Layer, LayerEndpoint]] = _build_topology()
 
+# The docker-compose service that runs each layer. Read for container stats
+# (CPU, memory) only -- never for faults, which go through Toxiproxy.
+COMPOSE_SERVICES: Final[dict[Layer, str]] = {
+    Layer.API: "api",
+    Layer.DB: "postgres",
+    Layer.CACHE: "redis",
+}
+
 # Static dependency graph: which layers a request through the API actually
 # touches. The API depends on both the db and the cache; neither depends on
 # the API or on each other.

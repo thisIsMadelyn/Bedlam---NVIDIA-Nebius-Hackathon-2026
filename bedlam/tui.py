@@ -24,6 +24,7 @@ import os
 import subprocess
 import textwrap
 import time
+from collections import deque
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any, Final
@@ -65,6 +66,8 @@ from bedlam.patches import (
 )
 from bedlam.probes.result import DEFAULT_TIMEOUT_S
 from bedlam.search.tavily import SearchCall, SearchClient
+from bedlam.stats import ContainerStats, StatsUnavailable
+from bedlam.stats import sample as sample_stats
 from bedlam.topology import Layer
 from bedlam.voice import Voice
 
@@ -90,6 +93,14 @@ _TEXT: Final = "#E6E4EF"
 _SOFT: Final = "#A29FB2"
 
 _BAR_MIN: Final = 20
+_SPARK: Final = "▁▂▃▄▅▆▇█"
+# CPU samples kept per container for its sparkline, and the wait between
+# samples (one `docker stats` call itself takes 2-3 s).
+_SPARK_LEN: Final = 8
+_STATS_PAUSE_S: Final = 0.5
+_STATS_RETRY_S: Final = 5.0
+# "  cpu  12.3% ▁▂▃▄▅▆▇█ mem  220M": fits next to a minimum bar at 82 columns.
+_LOAD_WIDTH: Final = 2 + 3 + 7 + 1 + _SPARK_LEN + 1 + 3 + 6
 _BAR_MAX: Final = 60
 _BAR_CEILING_MS: Final = 2000.0
 _REPO_ROOT: Final = Path(__file__).resolve().parents[1]
@@ -151,6 +162,7 @@ class GatedPatchSource:
 
 
 Launch = Callable[["BedlamApp"], Awaitable[int]]
+StatsSource = Callable[[], Awaitable[dict[Layer, ContainerStats]]]
 
 # The command line's commands: name -> what /help says. Each one is a
 # `_command_<name>` method on the app. None may decide the trade-off for the
@@ -210,7 +222,13 @@ class BedlamApp(App[int]):
     AUTO_FOCUS = "#timeline"
 
     def __init__(
-        self, root_seed: int, patches: PatchSource, launch: Launch, *, real: bool = False
+        self,
+        root_seed: int,
+        patches: PatchSource,
+        launch: Launch,
+        *,
+        real: bool = False,
+        stats: StatsSource | None = None,
     ) -> None:
         super().__init__()
         self.root_seed = root_seed
@@ -236,6 +254,11 @@ class BedlamApp(App[int]):
         self._timeline_rows: list[tuple[str, str, str]] = []
         self._agent_rows: list[tuple[int, CallRecord | SearchCall]] = []
         self._flowed: tuple[int, int] = (0, 0)
+        # Container load, display only. None: not sampled (tests, no Docker).
+        self._stats = stats
+        self._load: dict[Layer, ContainerStats] = {}
+        self._cpu: dict[Layer, deque[float]] = {layer: deque(maxlen=_SPARK_LEN) for layer in Layer}
+        self._load_note = "cpu and memory: starting" if stats else ""
         self.exit_code: int | None = None
 
     def compose(self) -> ComposeResult:
@@ -266,6 +289,8 @@ class BedlamApp(App[int]):
         self._render_chrome()
         self.set_interval(0.05, self._tick)
         self.run_worker(self._run(), exclusive=True)
+        if self._stats is not None:
+            self.run_worker(self._poll_stats(), group="stats")
 
     def on_resize(self) -> None:
         self.call_after_refresh(self._render_chrome)
@@ -538,7 +563,9 @@ class BedlamApp(App[int]):
     def _render_system(self) -> None:
         panel = self.query_one("#system", Static)
         width = _inner(panel)
-        size = max(_BAR_MIN, min(_BAR_MAX, width - (LINE - _BAR_MIN)))
+        # Room for the load columns comes out of the bar, down to its minimum.
+        spare = _LOAD_WIDTH if self._load else 0
+        size = max(_BAR_MIN, min(_BAR_MAX, width - (LINE - _BAR_MIN) - spare))
         system = Text()
         if self._probing_since is not None:
             # The three probes run at once, so their lines fill together, on
@@ -562,6 +589,11 @@ class BedlamApp(App[int]):
             system.append(latency_bar(latency, size), style=DAMAGE if hit else GO)
             system.append(f" {shown}")
             used = 6 + 1 + 6 + size + 1 + len(shown)
+            load = self._load_text(layer)
+            if load is not None and used + len(load) <= width:
+                system.append(load[:2])
+                system.append(load[2:], style=ACCENT)
+                used += len(load)
             if result.get("error") and width - used > 4:
                 system.append(fit(f"  {result['error']}", width - used), style=_SOFT)
             system.append("\n")
@@ -569,6 +601,36 @@ class BedlamApp(App[int]):
         style = f"bold {DAMAGE}" if self._fault else MUTED
         system.append(fit(f"fault  {fault}", width), style=style)
         panel.update(system)
+        panel.border_subtitle = self._load_note
+
+    async def _poll_stats(self) -> None:
+        """Sample container load until the app closes. Never feeds a decision."""
+        assert self._stats is not None
+        while True:
+            try:
+                self._load = await self._stats()
+            except StatsUnavailable as exc:
+                self._load = {}
+                self._load_note = "cpu and memory unavailable: is Docker running?"
+                _LOG.warning("container stats unavailable", extra={"fields": {"error": str(exc)}})
+                await asyncio.sleep(_STATS_RETRY_S)
+                continue
+            for layer, load in self._load.items():
+                self._cpu[layer].append(load.cpu_percent)
+            self._load_note = "cpu and memory: docker stats"
+            try:
+                self._render_system()
+            except NoMatches:
+                return  # shutting down
+            await asyncio.sleep(_STATS_PAUSE_S)
+
+    def _load_text(self, layer: Layer) -> str | None:
+        load = self._load.get(layer)
+        if load is None:
+            return None
+        spark = f"{sparkline(self._cpu[layer]):<{_SPARK_LEN}}"
+        memory = _memory(load.memory_bytes)
+        return f"  cpu{load.cpu_percent:>6.1f}% {spark} mem{memory:>6}"
 
     def _tick(self) -> None:
         try:
@@ -607,6 +669,23 @@ def _inner(widget: Widget) -> int:
     else:
         width = widget.content_region.width
     return max(width, LINE)
+
+
+def sparkline(values: deque[float] | list[float]) -> str:
+    """Recent CPU, oldest first. 100% (one full core) or the run's peak is the top."""
+    if not values:
+        return ""
+    top = max(100.0, *values)
+    return "".join(_SPARK[min(len(_SPARK) - 1, int(v / top * len(_SPARK)))] for v in values)
+
+
+def _memory(size: int) -> str:
+    """Bytes in four characters or so: 3.8M, 220M, 1.2G."""
+    for unit, scale in (("G", 1024**3), ("M", 1024**2), ("K", 1024)):
+        if size >= scale:
+            value = size / scale
+            return f"{value:.1f}{unit}" if value < 10 else f"{value:.0f}{unit}"
+    return f"{size}B"
 
 
 def _voice_style(quoted: bool) -> str:
@@ -650,7 +729,7 @@ def main(argv: list[str] | None = None) -> int:
             on_clients=app.attach,
         )
 
-    app = BedlamApp(root_seed, patches, launch, real=not args.scripted)
+    app = BedlamApp(root_seed, patches, launch, real=not args.scripted, stats=sample_stats)
     app.run()
     return app.exit_code if app.exit_code is not None else 1
 
