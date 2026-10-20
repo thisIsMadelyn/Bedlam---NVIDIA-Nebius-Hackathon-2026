@@ -21,6 +21,7 @@ import argparse
 import asyncio
 import math
 import os
+import subprocess
 import textwrap
 import time
 from collections.abc import Awaitable, Callable
@@ -41,10 +42,13 @@ from bedlam.guide import (
     EARLY_PRESS,
     LOG,
     MODELS,
-    PRESSED,
+    NO_CHANGES,
+    PRESSED_REAL,
+    PRESSED_SCRIPTED,
     STARTING,
     STEPS,
     STOPPED,
+    TARGET,
     Guidance,
     guidance,
 )
@@ -52,7 +56,13 @@ from bedlam.logging import get_logger, log_event, redirect
 from bedlam.loop import MAX_CYCLES, execute
 from bedlam.models.client import CallRecord, ModelClient
 from bedlam.models.map import LABELS
-from bedlam.patches import DEFAULT_PATCH_DIR, Patch, PatchSource, ScriptedPatchSource
+from bedlam.patches import (
+    DEFAULT_PATCH_DIR,
+    GitPatchSource,
+    Patch,
+    PatchSource,
+    ScriptedPatchSource,
+)
 from bedlam.probes.result import DEFAULT_TIMEOUT_S
 from bedlam.search.tavily import SearchCall, SearchClient
 from bedlam.topology import Layer
@@ -108,21 +118,30 @@ def latency_bar(latency_ms: float | None, size: int = _BAR_MIN) -> str:
 
 
 class GatedPatchSource:
-    """Holds the scripted patch back until the developer says it is in."""
+    """Holds the patch back until the developer says it is in.
+
+    An empty patch (P pressed before any edit was saved) is not passed on:
+    `on_empty` is told, and the gate waits for the next P.
+    """
 
     def __init__(self, inner: PatchSource) -> None:
         self._inner = inner
         self._released = asyncio.Event()
         self.waiting = False
+        self.on_empty: Callable[[], None] = lambda: None
 
     async def wait_for_patch(self, cycle: int) -> Patch:
-        self.waiting = True
-        try:
-            await self._released.wait()
-        finally:
-            self.waiting = False
-            self._released.clear()
-        return await self._inner.wait_for_patch(cycle)
+        while True:
+            self.waiting = True
+            try:
+                await self._released.wait()
+            finally:
+                self.waiting = False
+                self._released.clear()
+            patch = await self._inner.wait_for_patch(cycle)
+            if patch.diff.strip():
+                return patch
+            self.on_empty()
 
     def release(self) -> bool:
         if not self.waiting:
@@ -132,6 +151,7 @@ class GatedPatchSource:
 
 
 Launch = Callable[["BedlamApp"], Awaitable[int]]
+
 
 
 class BedlamApp(App[int]):
@@ -165,12 +185,17 @@ class BedlamApp(App[int]):
     }}
     #footer {{ height: 1; }}
     """
-    BINDINGS = [("p", "patch", "apply the prepared fix"), ("q", "quit", "quit")]
+    BINDINGS = [("p", "patch", "hand over the fix"), ("q", "quit", "quit")]
 
-    def __init__(self, root_seed: int, patches: PatchSource, launch: Launch) -> None:
+    def __init__(
+        self, root_seed: int, patches: PatchSource, launch: Launch, *, real: bool = False
+    ) -> None:
         super().__init__()
         self.root_seed = root_seed
+        # Real patch mode: the developer writes the fix and P reads git diff.
+        self.real = real
         self.patches = GatedPatchSource(patches)
+        self.patches.on_empty = self._no_changes
         self._voice = Voice(root_seed)
         self._launch = launch
         self._models: ModelClient | None = None
@@ -235,7 +260,15 @@ class BedlamApp(App[int]):
         self._models, self._search = models, search
 
     def action_patch(self) -> None:
-        self.now = PRESSED if self.patches.release() else self.now.nudged(EARLY_PRESS)
+        if self.patches.release():
+            self.now = PRESSED_REAL if self.real else PRESSED_SCRIPTED
+        else:
+            self.now = self.now.nudged(EARLY_PRESS)
+        self._render_chrome()
+
+    def _no_changes(self) -> None:
+        self.now = NO_CHANGES
+        self._say(f"no changes in {TARGET} yet. edit, save, press p", style=f"bold {GO}")
         self._render_chrome()
 
     # -- loop events ----------------------------------------------------------
@@ -246,7 +279,7 @@ class BedlamApp(App[int]):
         self._drain_calls()
         if kind == "cycle_started":
             self._cycle = fields["cycle"]
-        self.now = guidance(kind, fields) or self.now
+        self.now = guidance(kind, fields, real=self.real) or self.now
         handler = getattr(self, f"_on_{kind}", None)
         if handler is not None:
             handler(fields)
@@ -306,7 +339,11 @@ class BedlamApp(App[int]):
             self._say(line, style=DAMAGE)
 
     def _on_awaiting_patch(self, fields: dict[str, Any]) -> None:
-        self._say("waiting for your fix. press p to apply the prepared one", style=f"bold {GO}")
+        if self.real:
+            text = f"waiting for your fix in {TARGET}. press p when it is saved"
+        else:
+            text = "waiting for your fix. press p to apply the prepared one"
+        self._say(text, style=f"bold {GO}")
 
     def _on_patched(self, fields: dict[str, Any]) -> None:
         patch = fields["patch"]
@@ -427,7 +464,8 @@ class BedlamApp(App[int]):
         keys = Text(" ")
         lit = f"bold {_BACKGROUND} on {GO}"
         keys.append(" P ", style=lit if now.your_turn else f"{_TEXT} on {MUTED}")
-        keys.append(" apply the prepared fix    ", style=f"bold {GO}" if now.your_turn else _SOFT)
+        action = " read my fix    " if self.real else " apply the prepared fix    "
+        keys.append(action, style=f"bold {GO}" if now.your_turn else _SOFT)
         keys.append(" Q ", style=f"{_TEXT} on {MUTED}")
         keys.append(" quit", style=_SOFT)
         self.query_one("#footer", Static).update(keys)
@@ -515,9 +553,23 @@ def _voice_style(quoted: bool) -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="bedlam.tui", description=__doc__.splitlines()[0])
     parser.add_argument("--seed", type=int, default=None, help="root seed (default: BEDLAM_SEED)")
+    parser.add_argument(
+        "--scripted",
+        action="store_true",
+        help="apply the prepared diffs instead of reading your own edits",
+    )
     parser.add_argument("--patches", type=Path, default=DEFAULT_PATCH_DIR)
     parser.add_argument("--trace", type=Path, default=None, help="trace output path")
     args = parser.parse_args(argv)
+
+    patches: PatchSource
+    if args.scripted:
+        patches = ScriptedPatchSource(args.patches)
+    else:
+        try:
+            patches = GitPatchSource()
+        except (ValueError, OSError, subprocess.CalledProcessError) as exc:
+            parser.error(f"real patch mode needs the target as a git checkout: {exc}")
 
     load_dotenv(_REPO_ROOT / ".env")
     root_seed = args.seed if args.seed is not None else seeding.root_seed()
@@ -535,7 +587,7 @@ def main(argv: list[str] | None = None) -> int:
             on_clients=app.attach,
         )
 
-    app = BedlamApp(root_seed, ScriptedPatchSource(args.patches), launch)
+    app = BedlamApp(root_seed, patches, launch, real=not args.scripted)
     app.run()
     return app.exit_code if app.exit_code is not None else 1
 

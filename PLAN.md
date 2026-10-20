@@ -308,7 +308,9 @@ Ideas captured, not scheduled. Each one needs a phase and a yes before work star
 
 ### Real patch mode
 
-Approved 20 Oct, to land before the 26 Oct feature freeze. Pressing P today
+Approved and landed 20 Oct: the TUI's default (`GitPatchSource`), with
+`--scripted` as the fallback; headless runs and `make record` stay
+scripted. Pressing P before this
 sends a prepared diff from `demo/patches/`; the analysis of it is live, but
 the developer did not write it, and the product promise is "it reads your
 patch".

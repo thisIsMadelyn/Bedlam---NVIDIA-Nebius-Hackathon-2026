@@ -51,7 +51,39 @@ STARTING: Final = Guidance(
         _NOTHING,
     ),
 )
-PRESSED: Final = Guidance(
+# Where the developer edits in real patch mode, as shown on screen.
+TARGET: Final = "targets/fastapi-boilerplate"
+
+YOUR_TURN_REAL: Final = Guidance(
+    5,
+    "YOUR TURN",
+    (
+        f"Your app is broken. Fix it in {TARGET} and save.",
+        "Bedlam reads your git diff. The running app is not reloaded.",
+        "You: press P when your fix is saved.",
+    ),
+    your_turn=True,
+)
+YOUR_TURN_SCRIPTED: Final = Guidance(
+    5,
+    "YOUR TURN",
+    (
+        "Your app is broken. In real use you would write a fix now.",
+        "This demo ships a prepared fix for this round (--scripted).",
+        "You: press P to apply it.",
+    ),
+    your_turn=True,
+)
+PRESSED_REAL: Final = Guidance(
+    6,
+    "GOT IT",
+    (
+        "You pressed P. Bedlam is reading your git diff.",
+        f"Look at {LOG}: 'patch in' lists the files you changed.",
+        _NOTHING,
+    ),
+)
+PRESSED_SCRIPTED: Final = Guidance(
     6,
     "GOT IT",
     (
@@ -59,6 +91,16 @@ PRESSED: Final = Guidance(
         f"Look at {LOG}: 'patch in' confirms it arrived.",
         _NOTHING,
     ),
+)
+NO_CHANGES: Final = Guidance(
+    5,
+    "YOUR TURN",
+    (
+        f"No changes found in {TARGET} since the last round.",
+        "Edit a file there and save it. Bedlam reads your git diff.",
+        "You: press P again when your fix is saved.",
+    ),
+    your_turn=True,
 )
 EARLY_PRESS: Final = "You pressed P, but there is nothing to fix yet. Keep watching."
 STOPPED: Final = Guidance(
@@ -68,8 +110,11 @@ STOPPED: Final = Guidance(
 )
 
 
-def guidance(kind: str, fields: dict[str, Any]) -> Guidance | None:
-    """What the NOW box says after a loop event. None keeps the current one."""
+def guidance(kind: str, fields: dict[str, Any], *, real: bool = False) -> Guidance | None:
+    """What the NOW box says after a loop event. None keeps the current one.
+
+    `real` is real patch mode: the developer writes the fix.
+    """
     if kind == "baseline":
         return Guidance(
             0,
@@ -142,16 +187,7 @@ def guidance(kind: str, fields: dict[str, Any]) -> Guidance | None:
             (f"{what} That is the damage to fix.", f"Look at {APP}: red means damaged.", _NOTHING),
         )
     if kind == "awaiting_patch":
-        return Guidance(
-            5,
-            "YOUR TURN",
-            (
-                "Your app is broken. In real use you would write a fix now.",
-                "This demo ships a prepared fix for this round.",
-                "You: press P to apply it.",
-            ),
-            your_turn=True,
-        )
+        return YOUR_TURN_REAL if real else YOUR_TURN_SCRIPTED
     if kind == "fault_removed":
         return Guidance(
             6,
