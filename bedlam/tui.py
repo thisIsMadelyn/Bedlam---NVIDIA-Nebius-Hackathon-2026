@@ -1,0 +1,402 @@
+"""The Bedlam terminal UI. 82 columns, never wider.
+
+The loop runs inside the app as a worker and reports each step through its
+event hook. The TUI only observes: nothing on screen feeds a decision, and
+the developer's one input to the loop is saying the patch is in.
+
+Panels, top to bottom: header (seed, cycle, specialist, blast radius), the
+phase strip, SYSTEM (per-layer health and the live fault), TIMELINE (what
+the loop did, in order), AGENT (every model call with the model that
+answered it, and every Tavily call).
+
+Run: python -m bedlam.tui
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import math
+import os
+import textwrap
+from collections.abc import Awaitable, Callable
+from pathlib import Path
+from typing import Any, Final
+
+from dotenv import load_dotenv
+from rich.text import Text
+from textual.app import App, ComposeResult
+from textual.containers import Vertical
+from textual.widgets import RichLog, Static
+
+from bedlam import seed as seeding
+from bedlam.logging import redirect
+from bedlam.loop import MAX_CYCLES, execute
+from bedlam.models.client import ModelClient
+from bedlam.models.map import LABELS
+from bedlam.patches import DEFAULT_PATCH_DIR, Patch, PatchSource, ScriptedPatchSource
+from bedlam.search.tavily import SearchClient
+from bedlam.topology import Layer
+
+WIDTH: Final = 82
+# Border (2) + horizontal padding (2) + scrollbar (1), with one column spare.
+LINE: Final = WIDTH - 6
+_BAR: Final = 20
+_BAR_CEILING_MS: Final = 2000.0
+_REPO_ROOT: Final = Path(__file__).resolve().parents[1]
+
+# The loop's steps, as the phase strip names them, and which event lights each.
+PHASES: Final = ("search", "route", "select", "inject", "probe", "patch", "analyse")
+_PHASE_OF: Final = {
+    "searching": "search",
+    "routed": "route",
+    "selected": "select",
+    "injecting": "inject",
+    "probed": "probe",
+    "symptom": "probe",
+    "awaiting_patch": "patch",
+    "patched": "patch",
+    "fault_removed": "patch",
+    "analysed": "analyse",
+}
+
+
+def fit(text: str, width: int = LINE) -> str:
+    """One line, cut to `width` with an ellipsis. Nothing on screen wraps."""
+    return text if len(text) <= width else text[: width - 1] + "…"
+
+
+# A timeline line after its "c1 " cycle prefix.
+SAY: Final = LINE - 3
+
+
+def wrap(text: str, indent: int, width: int = SAY) -> list[str]:
+    """Hanging-indent wrap for prose the loop produced (rationales, summaries)."""
+    lines = textwrap.wrap(" ".join(text.split()), width=width, subsequent_indent=" " * indent)
+    return lines or [""]
+
+
+def latency_bar(latency_ms: float | None) -> str:
+    """A log-scaled bar: 1 ms is empty, 2 s and over is full."""
+    if latency_ms is None:
+        return "·" * _BAR
+    scale = math.log10(max(latency_ms, 1.0)) / math.log10(_BAR_CEILING_MS)
+    filled = max(1, min(_BAR, round(scale * _BAR)))
+    return "█" * filled + "░" * (_BAR - filled)
+
+
+class GatedPatchSource:
+    """Holds the scripted patch back until the developer says it is in."""
+
+    def __init__(self, inner: PatchSource) -> None:
+        self._inner = inner
+        self._released = asyncio.Event()
+        self.waiting = False
+
+    async def wait_for_patch(self, cycle: int) -> Patch:
+        self.waiting = True
+        try:
+            await self._released.wait()
+        finally:
+            self.waiting = False
+            self._released.clear()
+        return await self._inner.wait_for_patch(cycle)
+
+    def release(self) -> bool:
+        if not self.waiting:
+            return False
+        self._released.set()
+        return True
+
+
+Launch = Callable[["BedlamApp"], Awaitable[int]]
+
+
+class BedlamApp(App[int]):
+    CSS = f"""
+    Screen {{ align: center top; }}
+    #frame {{ width: {WIDTH}; height: 100%; }}
+    #header {{ height: 1; background: $error; color: $text; text-style: bold; }}
+    #phases {{ height: 1; }}
+    .panel {{ border: round $panel-lighten-2; padding: 0 1; }}
+    #system {{ height: 6; }}
+    #timeline {{ height: 1fr; min-height: 6; }}
+    #agent {{ height: 9; }}
+    RichLog {{ scrollbar-size-vertical: 1; }}
+    #footer {{ height: 1; color: $text-muted; }}
+    """
+    BINDINGS = [("p", "patch", "patch is in"), ("q", "quit", "quit")]
+
+    def __init__(self, root_seed: int, patches: PatchSource, launch: Launch) -> None:
+        super().__init__()
+        self.root_seed = root_seed
+        self.patches = GatedPatchSource(patches)
+        self._launch = launch
+        self._models: ModelClient | None = None
+        self._search: SearchClient | None = None
+        self._seen_calls = 0
+        self._seen_searches = 0
+        self._cycle = 0
+        self._phase: str | None = None
+        self._done: set[str] = set()
+        self._specialist = "-"
+        self._blast: list[str] = []
+        self._fault: str | None = None
+        self._health: dict[str, dict[str, Any]] = {}
+        self.exit_code: int | None = None
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="frame"):
+            yield Static(id="header")
+            yield Static(id="phases")
+            system = Static(id="system", classes="panel")
+            system.border_title = "SYSTEM"
+            yield system
+            timeline = RichLog(id="timeline", classes="panel", wrap=False)
+            timeline.border_title = "TIMELINE"
+            yield timeline
+            agent = RichLog(id="agent", classes="panel", wrap=False)
+            agent.border_title = "AGENT"
+            yield agent
+            yield Static(id="footer")
+
+    def on_mount(self) -> None:
+        self._render_chrome()
+        self._footer("running. q quits")
+        self.set_interval(0.2, self._drain_calls)
+        self.run_worker(self._run(), exclusive=True)
+
+    async def _run(self) -> None:
+        try:
+            self.exit_code = await self._launch(self)
+        except Exception as exc:
+            self.exit_code = 1
+            self._say(f"run failed: {type(exc).__name__}: {exc}", style="bold red")
+        self._drain_calls()
+        outcome = "completed" if self.exit_code == 0 else "failed"
+        self._footer(f"run {outcome}. q quits")
+
+    # -- inputs ---------------------------------------------------------------
+
+    def attach(self, models: ModelClient, search: SearchClient) -> None:
+        self._models, self._search = models, search
+
+    def action_patch(self) -> None:
+        if self.patches.release():
+            self._footer("patch received. reading it")
+        else:
+            self._footer("no fault is waiting on a patch yet")
+
+    # -- loop events ----------------------------------------------------------
+
+    def on_loop_event(self, kind: str, fields: dict[str, Any]) -> None:
+        # Drain first: calls made since the last event belong to the cycle
+        # in effect before this one, and a cycle can outrun the poll timer.
+        self._drain_calls()
+        if kind == "cycle_started":
+            self._cycle = fields["cycle"]
+            self._done.clear()
+        if kind in _PHASE_OF:
+            if self._phase and self._phase != _PHASE_OF[kind]:
+                self._done.add(self._phase)
+            self._phase = _PHASE_OF[kind]
+        handler = getattr(self, f"_on_{kind}", None)
+        if handler is not None:
+            handler(fields)
+        self._render_chrome()
+
+    def _on_baseline(self, fields: dict[str, Any]) -> None:
+        self._health = fields["snapshot"]
+        self._say("baseline: " + self._health_line(), style="green")
+
+    def _on_cycle_started(self, fields: dict[str, Any]) -> None:
+        self._say(f"── cycle {fields['cycle']} of {MAX_CYCLES} " + "─" * 40, style="bold")
+
+    def _on_searching(self, fields: dict[str, Any]) -> None:
+        for query in fields["queries"]:
+            self._say(f"tavily  {query['text']}", style="cyan")
+
+    def _on_routed(self, fields: dict[str, Any]) -> None:
+        routing = fields["routing"]
+        self._specialist = fields["specialist"]
+        weights = " · ".join(f"{k} {v:.2f}" for k, v in routing["weights"].items())
+        self._say(f"routed to {self._specialist} ({routing['basis']}: {weights})")
+
+    def _on_selected(self, fields: dict[str, Any]) -> None:
+        selection = fields["selection"]
+        self._say(f"picked {selection['fault']['id']} from {len(selection['eligible'])} eligible")
+        if selection.get("rationale"):
+            for line in wrap("why: " + selection["rationale"], indent=5):
+                self._say(line, style="dim")
+
+    def _on_injecting(self, fields: dict[str, Any]) -> None:
+        self._fault, self._blast = fields["fault"], fields["blast_radius"]
+        self._say(f"injecting {self._fault}, blast radius {', '.join(self._blast)}", "bold red")
+
+    def _on_probed(self, fields: dict[str, Any]) -> None:
+        self._health = fields["snapshot"]
+        self._say("under fault: " + self._health_line(), style="yellow")
+
+    def _on_symptom(self, fields: dict[str, Any]) -> None:
+        symptom = fields["symptom"]
+        where = f" on {symptom['layer']}" if symptom["layer"] else ""
+        for line in wrap(f"symptom: {symptom['kind']}{where}. {symptom['summary']}", indent=9):
+            self._say(line, style="yellow")
+
+    def _on_awaiting_patch(self, fields: dict[str, Any]) -> None:
+        self._say("your move. patch it, then press p", style="bold magenta")
+        self._footer("waiting for your patch. p when it is in, q quits")
+
+    def _on_patched(self, fields: dict[str, Any]) -> None:
+        patch = fields["patch"]
+        self._say(f"patch in: {patch['source']} ({patch['chars']} chars)")
+
+    def _on_fault_removed(self, fields: dict[str, Any]) -> None:
+        self._health = fields["snapshot"]
+        self._fault, self._blast = None, []
+        self._say("fault removed: " + self._health_line(), style="green")
+        self._footer("running. q quits")
+
+    def _on_analysed(self, fields: dict[str, Any]) -> None:
+        analysis = fields["analysis"]
+        defended = ", ".join(f"{d['layer']}/{d['kind']}" for d in analysis["defended"]) or "none"
+        self._say(f"patch defends: {defended}")
+        if analysis["gaps"]:
+            for line in wrap("gaps: " + "; ".join(analysis["gaps"]), indent=6):
+                self._say(line, style="dim")
+        self._done.add("analyse")
+
+    def _on_escalation_pending(self, fields: dict[str, Any]) -> None:
+        self._phase = None
+        self._say("two cycles done. the trade-off escalation is next", style="bold")
+
+    # -- agent panel ----------------------------------------------------------
+
+    def _drain_calls(self) -> None:
+        agent = self.query_one("#agent", RichLog)
+        if self._models is not None:
+            for record in self._models.records[self._seen_calls :]:
+                tokens = f"{record.prompt_tokens or 0:>5}→{record.completion_tokens or 0:<5}"
+                flag = " fallback" if record.fallback else ""
+                cycle = f"c{record.cycle}" if record.cycle else "--"
+                line = (
+                    f"{cycle} {record.site:<24} {LABELS.get(record.model, '?'):<5} {tokens} "
+                    f"{record.latency_ms:>6.0f}ms {record.outcome}{flag}"
+                )
+                style = "red" if record.outcome != "ok" else "yellow" if record.fallback else ""
+                agent.write(Text(fit(line), style=style))
+            self._seen_calls = len(self._models.records)
+        if self._search is not None:
+            for call in self._search.calls[self._seen_searches :]:
+                hits = "cached" if call.cached else f"{call.results} hits"
+                timing = f" {hits:>7} {call.latency_ms:>6.0f}ms"
+                head = f"c{self._cycle} tavily "
+                query = fit(call.query, LINE - len(head) - len(timing))
+                width = LINE - len(head) - len(timing)
+                agent.write(Text(f"{head}{query:<{width}}{timing}", style="cyan"))
+            self._seen_searches = len(self._search.calls)
+        agent.border_subtitle = self._usage()
+
+    def _usage(self) -> str:
+        counts: dict[str, int] = {}
+        tokens = 0
+        for record in self._models.records if self._models else []:
+            label = LABELS.get(record.model, "?")
+            counts[label] = counts.get(label, 0) + 1
+            tokens += (record.prompt_tokens or 0) + (record.completion_tokens or 0)
+        searches = len(self._search.calls) if self._search else 0
+        parts = [f"{label} {n}" for label, n in sorted(counts.items(), reverse=True)]
+        return " · ".join([*parts, f"Tavily {searches}", f"{tokens / 1000:.1f}k tok"])
+
+    # -- rendering ------------------------------------------------------------
+
+    def _render_chrome(self) -> None:
+        cycle = f"{self._cycle}/{MAX_CYCLES}" if self._cycle else "-"
+        blast = ",".join(self._blast) or "-"
+        header = (
+            f" BEDLAM  seed {self.root_seed}  cycle {cycle}  "
+            f"specialist {self._specialist}  blast {blast}"
+        )
+        self.query_one("#header", Static).update(Text(fit(header, WIDTH).ljust(WIDTH)))
+
+        strip = Text(" ")
+        for i, phase in enumerate(PHASES):
+            if i:
+                strip.append(" › ", style="dim")
+            if phase == self._phase:
+                strip.append(f" {phase.upper()} ", style="bold reverse")
+            elif phase in self._done:
+                strip.append(phase, style="green")
+            else:
+                strip.append(phase, style="dim")
+        self.query_one("#phases", Static).update(strip)
+
+        system = Text()
+        for layer in Layer:
+            result = self._health.get(layer.value)
+            if result is None:
+                system.append(f"{layer.value:<6} {'-':<5} {'·' * _BAR}\n", style="dim")
+                continue
+            up = result["status"] == "up"
+            latency = result["latency_ms"]
+            shown = f"{latency:>8.1f} ms" if latency is not None else "      -   "
+            system.append(f"{layer.value:<6} ")
+            system.append(f"{result['status'].upper():<5} ", style="green" if up else "bold red")
+            hit = layer.value in self._blast
+            system.append(latency_bar(latency), style="red" if hit else "green")
+            system.append(f" {shown}")
+            if result.get("error"):
+                system.append(fit(f"  {result['error']}", LINE - 42), style="dim")
+            system.append("\n")
+        fault = f"{self._fault} live, blast {', '.join(self._blast)}" if self._fault else "none"
+        system.append(fit(f"fault  {fault}"), style="bold red" if self._fault else "dim")
+        self.query_one("#system", Static).update(system)
+
+    def _health_line(self) -> str:
+        parts = []
+        for layer, result in self._health.items():
+            latency = result["latency_ms"]
+            value = f"{latency:.0f}ms" if latency is not None else "-"
+            parts.append(f"{layer} {result['status']} {value}")
+        return ", ".join(parts)
+
+    def _say(self, text: str, style: str = "") -> None:
+        cycle = f"c{self._cycle}" if self._cycle else "--"
+        line = Text(f"{cycle} ", style="dim")
+        line.append(fit(text, SAY), style=style)
+        self.query_one("#timeline", RichLog).write(line)
+
+    def _footer(self, text: str) -> None:
+        self.query_one("#footer", Static).update(Text(fit(" " + text, WIDTH), style="dim"))
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="bedlam.tui", description=__doc__.splitlines()[0])
+    parser.add_argument("--seed", type=int, default=None, help="root seed (default: BEDLAM_SEED)")
+    parser.add_argument("--patches", type=Path, default=DEFAULT_PATCH_DIR)
+    parser.add_argument("--trace", type=Path, default=None, help="trace output path")
+    args = parser.parse_args(argv)
+
+    load_dotenv(_REPO_ROOT / ".env")
+    root_seed = args.seed if args.seed is not None else seeding.root_seed()
+    os.environ[seeding.ROOT_SEED_ENV] = str(root_seed)
+    trace_path = args.trace or _REPO_ROOT / "traces" / f"tui-seed{root_seed}.json"
+    # The TUI owns the terminal: JSON logs go next to the trace instead.
+    redirect(trace_path.with_suffix(".log"))
+
+    def launch(app: BedlamApp) -> Awaitable[int]:
+        return execute(
+            root_seed,
+            app.patches,
+            trace_path,
+            on_event=app.on_loop_event,
+            on_clients=app.attach,
+        )
+
+    app = BedlamApp(root_seed, ScriptedPatchSource(args.patches), launch)
+    app.run()
+    return app.exit_code if app.exit_code is not None else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
