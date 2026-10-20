@@ -106,6 +106,40 @@ def test_a_repeated_query_is_named_in_the_rejection_so_the_retry_can_fix_it() ->
     assert "two queries target `redis`" in retry
 
 
+def _formulate_with(reply: dict, previous: list[str]):
+    transport = FakeTransport({CallSite.TAVILY_QUERY_FORMULATION: lambda _c, _m: reply})
+    client = ModelClient(transport, root_seed=1, backoff_s=0.0)
+    return asyncio.run(
+        formulate(
+            client,
+            manifest=load_manifest(),
+            history=[],
+            symptom=None,
+            analysis=None,
+            previous_queries=previous,
+        )
+    )
+
+
+def test_a_query_repeated_on_every_attempt_leaves_the_run_one_live_search() -> None:
+    previous = "asyncpg 0.31.0 pool exhaustion not recovering"
+    repeat = {"dependency": "asyncpg", "failure_term": "pool exhaustion not recovering"}
+    redis = {"dependency": "redis", "failure_term": "socket connect hangs forever"}
+
+    queries = _formulate_with({"queries": [repeat, redis]}, [previous])
+
+    assert [q.text.split()[0] for q in queries] == ["redis"]
+    assert all(q.short for q in queries), "a short round must say so in the trace"
+
+
+def test_no_usable_query_on_any_attempt_still_stops_the_run() -> None:
+    previous = "asyncpg 0.31.0 pool exhaustion not recovering"
+    repeat = {"dependency": "asyncpg", "failure_term": "pool exhaustion not recovering"}
+
+    with pytest.raises(ModelCallError, match="already searched"):
+        _formulate_with({"queries": [repeat]}, [previous])
+
+
 # --- catalog and specialists ------------------------------------------------
 
 

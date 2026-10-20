@@ -6,6 +6,12 @@ can't drift to a version the target doesn't run. It can't search the
 boilerplate's own name either: the dependency must be in the manifest, and
 a failure term naming the boilerplate is rejected. Searching the boilerplate
 name returns noise.
+
+A reply short of new queries is retried with the reason. If every attempt
+still falls short -- Nano repeating an earlier round's query is the usual
+case -- the run goes on with the most new queries any attempt produced, as
+long as there is at least one. That is logged and marked on the queries:
+one live search is worth more than a stopped run.
 """
 
 from __future__ import annotations
@@ -17,10 +23,13 @@ from typing import Any, Final
 from bedlam import prompts
 from bedlam.diff import DiffAnalysis
 from bedlam.history import FaultRecord
-from bedlam.models.client import ModelClient
+from bedlam.logging import get_logger
+from bedlam.models.client import ModelCallError, ModelClient
 from bedlam.models.map import CallSite
 from bedlam.probes.classify import Symptom
 from bedlam.search.manifest import Dependency, lookup
+
+_LOG = get_logger("bedlam.search.query")
 
 QUERIES_PER_CYCLE: Final = 2
 _BANNED_TERMS: Final = re.compile(r"boilerplate|benavlabs", re.IGNORECASE)
@@ -32,6 +41,9 @@ class SearchQuery:
     dependency: str
     version: str
     failure_term: str
+    # True when the round ran short: every attempt fell short of
+    # QUERIES_PER_CYCLE new queries, and this one was the best left.
+    short: bool = False
 
     @property
     def text(self) -> str:
@@ -41,7 +53,9 @@ class SearchQuery:
         return {**asdict(self), "text": self.text}
 
 
-def _parser(manifest: tuple[Dependency, ...], previous: set[str]):
+def _parser(manifest: tuple[Dependency, ...], previous: set[str], best: list[SearchQuery]):
+    """Parse one reply. `best` keeps the most usable queries any reply held."""
+
     def parse(value: Any) -> tuple[SearchQuery, ...]:
         queries: list[SearchQuery] = []
         skipped: list[str] = []
@@ -70,6 +84,8 @@ def _parser(manifest: tuple[Dependency, ...], previous: set[str]):
                 continue
             seen.add(dep.name)
             queries.append(query)
+        if len(queries) > len(best):
+            best[:] = queries
         if len(queries) < QUERIES_PER_CYCLE:
             reasons = "; ".join(skipped) or f"the reply held {len(queries)} queries"
             raise ValueError(
@@ -90,6 +106,34 @@ async def formulate(
     analysis: DiffAnalysis | None,
     previous_queries: list[str],
 ) -> tuple[SearchQuery, ...]:
+    best: list[SearchQuery] = []
+    try:
+        return await _ask(client, manifest, history, symptom, analysis, previous_queries, best)
+    except ModelCallError as exc:
+        if not best:
+            raise
+        _LOG.warning(
+            "query formulation short",
+            extra={
+                "fields": {
+                    "queries": [q.text for q in best],
+                    "wanted": QUERIES_PER_CYCLE,
+                    "error": str(exc),
+                }
+            },
+        )
+        return tuple(SearchQuery(q.dependency, q.version, q.failure_term, short=True) for q in best)
+
+
+async def _ask(
+    client: ModelClient,
+    manifest: tuple[Dependency, ...],
+    history: list[FaultRecord],
+    symptom: Symptom | None,
+    analysis: DiffAnalysis | None,
+    previous_queries: list[str],
+    best: list[SearchQuery],
+) -> tuple[SearchQuery, ...]:
     return await client.json(
         CallSite.TAVILY_QUERY_FORMULATION,
         system=prompts.load("query_formulation"),
@@ -103,5 +147,5 @@ async def formulate(
                 "previous_queries": previous_queries,
             }
         ),
-        parse=_parser(manifest, set(previous_queries)),
+        parse=_parser(manifest, set(previous_queries), best),
     )
