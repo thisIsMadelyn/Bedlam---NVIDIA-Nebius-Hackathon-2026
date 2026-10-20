@@ -20,6 +20,8 @@ hangs" that turns out to be caused by an exhausted SQLAlchemy pool is `db`.
 Label every result exactly once, using its `index`. For each result,
 first name the component that failed (a library, server or tool, such as
 `redis-py` or `asyncpg`), then choose the layer that component belongs to.
+Write the component's name as it appears in that result's title, URL or
+snippet.
 Reply with one JSON object and nothing else:
 
 {"labels": [{"index": 0, "component": "<name>", "layer": "api|db|cache|none"}, ...]}

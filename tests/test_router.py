@@ -8,6 +8,7 @@ import random
 from fakes import FakeSearchBackend, FakeTransport, plausible_model, tavily_hit
 
 from bedlam.models.client import ModelClient
+from bedlam.models.map import CallSite
 from bedlam.router import ClassifiedResult, classify_results, route
 from bedlam.search.tavily import SearchClient, SearchResult, merge
 from bedlam.specialists import SPECIALISTS
@@ -83,3 +84,50 @@ def test_no_layered_results_falls_back_to_symptom_then_seed() -> None:
     seeded_b = route(nothing, symptom_layer=None, rng=random.Random(7))
     assert seeded_a.basis == "seeded"
     assert seeded_a.layer is seeded_b.layer
+
+
+# The live misalignment, 20 Oct: one batch, two queries' results, and Nano's
+# labels drifted one index at the boundary. The phpredis issue got "httpx".
+_REDIS = SearchResult("q1", "https://github.com/phpredis/phpredis/issues/1726",
+                      "Redis->auth() freezes", "phpredis hangs on auth", 0.64)  # fmt: skip
+_HTTPX = SearchResult("q2", "https://github.com/encode/httpx/discussions/3215",
+                      "httpx client is slow", "httpx concurrency", 0.63)  # fmt: skip
+_DRIFTED = {"labels": [{"index": 0, "component": "httpx", "layer": "api"},
+                       {"index": 1, "component": "httpx", "layer": "api"}]}  # fmt: skip
+_ALIGNED = {"labels": [{"index": 0, "component": "phpredis", "layer": "cache"},
+                       {"index": 1, "component": "httpx", "layer": "api"}]}  # fmt: skip
+
+
+def _classify_with(replies: list[dict]) -> tuple[list[ClassifiedResult], FakeTransport]:
+    queue = list(replies)
+    transport = FakeTransport({CallSite.LAYER_CLASSIFICATION: lambda ctx, model: queue.pop(0)})
+    models = ModelClient(transport, root_seed=1, backoff_s=0.0)
+    return asyncio.run(classify_results(models, (_REDIS, _HTTPX))), transport
+
+
+def test_a_label_naming_a_component_its_result_never_mentions_is_retried() -> None:
+    classified, transport = _classify_with([_DRIFTED, _ALIGNED])
+
+    assert [c.layer for c in classified] == [Layer.CACHE, Layer.API]
+    assert [c.component for c in classified] == ["phpredis", "httpx"]
+    retry = transport.messages[1][-1]["content"]
+    assert "result 0 does not mention component 'httpx'" in retry
+
+
+def test_a_label_that_keeps_failing_the_check_is_left_out_not_fatal() -> None:
+    # Both checked attempts rejected. The run goes on: the reply is kept, but
+    # the label that fails the check no longer votes.
+    classified, transport = _classify_with([_DRIFTED, _DRIFTED, _DRIFTED])
+
+    assert [c.layer for c in classified] == [None, Layer.API]
+    assert [c.component for c in classified] == ["httpx", "httpx"]
+    assert len(transport.calls) == 3
+
+
+def test_component_check_ignores_case_and_punctuation() -> None:
+    reply = {"labels": [{"index": 0, "component": "PHPRedis", "layer": "cache"},
+                        {"index": 1, "component": "HTTPX", "layer": "api"}]}  # fmt: skip
+    classified, transport = _classify_with([reply])
+
+    assert [c.layer for c in classified] == [Layer.CACHE, Layer.API]
+    assert len(transport.calls) == 1

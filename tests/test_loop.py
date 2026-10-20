@@ -57,6 +57,7 @@ def test_two_cycles_complete_and_write_a_structured_trace(tmp_path: Path) -> Non
     assert trace["escalation"]["status"] == "pending_phase_4"
     for cycle in trace["cycles"]:
         assert cycle["routing"]["basis"] == "search"
+        assert all(r["component"] for r in cycle["results"] if r["layer"])
         assert cycle["blast_radius"]
         assert cycle["diff_analysis"]["summary"]
 

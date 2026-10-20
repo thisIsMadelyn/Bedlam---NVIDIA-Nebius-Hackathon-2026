@@ -56,12 +56,14 @@ _LAYER_WORDS = {
 }
 
 
-def _layer_of(text: str) -> str:
+def _label_of(text: str) -> tuple[str, str]:
+    """(component, layer): the first known component the text mentions."""
     low = text.lower()
     for layer, words in _LAYER_WORDS.items():
-        if any(word in low for word in words):
-            return layer
-    return "none"
+        for word in words:
+            if word in low:
+                return word, layer
+    return "unknown", "none"
 
 
 def answer_query_formulation(ctx: dict[str, Any], _model: str) -> Any:
@@ -79,8 +81,9 @@ def answer_query_formulation(ctx: dict[str, Any], _model: str) -> Any:
 def answer_layer_classification(ctx: dict[str, Any], _model: str) -> Any:
     return {
         "labels": [
-            {"index": r["index"], "layer": _layer_of(r["title"] + " " + r["snippet"])}
+            {"index": r["index"], "component": component, "layer": layer}
             for r in ctx["results"]
+            for component, layer in [_label_of(r["title"] + " " + r["snippet"])]
         ]
     }
 

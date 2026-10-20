@@ -113,7 +113,8 @@ async def run(deps: LoopDeps, trace: Trace) -> Trace:
 
         # 2. Route on what the search returned.
         classified = await classify_results(deps.models, results)
-        record["results"] = [item.to_dict() for item in classified]
+        # The component goes in the trace only, so synthesis input is unchanged.
+        record["results"] = [{**item.to_dict(), "component": item.component} for item in classified]
         routing = route(
             classified,
             symptom_layer=symptom.layer if symptom else None,
