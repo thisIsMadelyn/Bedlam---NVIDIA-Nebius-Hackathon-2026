@@ -199,7 +199,7 @@ Artifacts:
 Done when:
 - [x] Escalation fires deterministically at the end of cycle 2
 - [x] Both branches are reachable and produce different subsequent behaviour
-- [ ] The framing is a trade-off, not a recommendation with extra steps
+- [x] The framing is a trade-off, not a recommendation with extra steps
 
 ---
 
