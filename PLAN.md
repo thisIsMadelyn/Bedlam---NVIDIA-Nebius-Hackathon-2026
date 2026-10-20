@@ -168,7 +168,8 @@ Risk: Tavily queries returning noise. Mitigation is in the query builder — sea
 
 Artifacts:
 - Textual TUI, fluid with an 82-column minimum (changed 20 Oct from a fixed 82),
-  header showing blast radius and cycle counter
+  header showing the cycle counter; the blast radius shows on the live fault's
+  line in the system panel
 - Panels: TIMELINE, SYSTEM, AGENT
 - AGENT panel shows **which model answered each step** — this is what turns the model
   map from a claim in the README into something demonstrated on screen
@@ -176,10 +177,10 @@ Artifacts:
 - Bedlam's voice: templated, with humour, terminal-only
 
 Done when:
-- [ ] Nothing wraps or clips at 82 columns
-- [ ] A viewer can identify the current phase of the loop without narration
-- [ ] Model attribution is visible per step
-- [ ] Hardcoded placeholder metrics are fully replaced by real ones
+- [x] Nothing wraps or clips at 82 columns
+- [x] A viewer can identify the current phase of the loop without narration
+- [x] Model attribution is visible per step
+- [x] Hardcoded placeholder metrics are fully replaced by real ones
 
 ---
 
@@ -351,5 +352,6 @@ with ASCII (bars, sparklines) so it stays inside 82 columns. Candidates:
 - Tavily calls made this run and credits used
 - Target stack load per container (CPU, memory) during each fault
 
-Overlaps with the Phase 3 AGENT panel, so it may fit there. Container stats may
-need a new dependency — ask before adding one.
+Overlaps with the Phase 3 AGENT panel, so it may fit there. Container stats
+landed 20 Oct (`f874fae`): CPU with a sparkline and memory per layer, read from
+the `docker` CLI, so no new dependency. Display only.
