@@ -99,8 +99,11 @@ The demo must reproduce. A judge running this build should see what the video sh
 - Any new randomness must be seeded from a single configurable root seed.
 - Never use unseeded `random`, `uuid4` in a decision path, or wall-clock time as an
   input to a decision.
-- Before declaring a change done in the decision chain, run the loop three times
-  with the same seed and confirm identical fault sequences.
+- Before declaring a change done in the decision chain, run `make test`: the replay
+  test feeds a recorded live run back three times and must reproduce its fault
+  sequence. If the change made the recording stale (prompt, model map or patch
+  edits), re-record with `make record` first. Three live runs are not the check:
+  Token Factory is not deterministic at temperature 0 with a fixed seed.
 
 ---
 

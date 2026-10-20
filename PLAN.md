@@ -149,7 +149,11 @@ Artifacts:
 
 Done when:
 - [x] A full two-cycle run completes headless and writes a structured JSON trace
-- [ ] The same seed produces the same fault sequence across three consecutive runs
+- [x] Given the same recorded inputs (model replies, Tavily results, probe
+  snapshots) and seed, three replays produce the live run's fault sequence
+  (`make record`, `tests/test_replay.py`). Reworded 20 Oct from "same seed,
+  same fault sequence across three live runs": Token Factory is not
+  deterministic at temperature 0 with a fixed seed, so live runs can diverge.
 - [x] Every model call appears in the trace with its site and model name
 - [x] Tavily output demonstrably changes which specialist is selected
 
@@ -204,7 +208,8 @@ Done when:
 Artifacts:
 - Scripted patches for the demo, applied as real commits so the diff analysis is live
 - Three consecutive clean end-to-end runs from a fresh `docker compose up`
-- Determinism verified: identical seed, identical run
+- Determinism verified by replay: re-record the final demo run with `make record`,
+  then `make test` reproduces its fault sequence
 - Replay mode as a no-key fallback — **never the default**, because a judge running
   it must see the live Tavily call
 
