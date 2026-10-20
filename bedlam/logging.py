@@ -11,7 +11,11 @@ import json
 import logging
 import sys
 from datetime import UTC, datetime
-from typing import Any
+from pathlib import Path
+from typing import Any, TextIO
+
+# Where new handlers write. The TUI owns the terminal, so it moves logs to a file.
+_stream: TextIO = sys.stderr
 
 
 class _JSONFormatter(logging.Formatter):
@@ -37,12 +41,25 @@ def get_logger(name: str) -> logging.Logger:
     """
     logger = logging.getLogger(name)
     if not logger.handlers:
-        handler = logging.StreamHandler(stream=sys.stderr)
+        handler = logging.StreamHandler(stream=_stream)
         handler.setFormatter(_JSONFormatter())
         logger.addHandler(handler)
         logger.setLevel(logging.INFO)
         logger.propagate = False
     return logger
+
+
+def redirect(path: Path) -> None:
+    """Send every Bedlam log line, existing loggers included, to `path`."""
+    global _stream
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _stream = path.open("a", encoding="utf-8")
+    for name, logger in logging.root.manager.loggerDict.items():
+        if not name.startswith("bedlam") or not isinstance(logger, logging.Logger):
+            continue
+        for handler in logger.handlers:
+            if isinstance(handler, logging.StreamHandler):
+                handler.setStream(_stream)
 
 
 def log_event(logger: logging.Logger, message: str, /, **fields: Any) -> None:

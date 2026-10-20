@@ -26,6 +26,8 @@ _LIGHTNING_UNUSED: Final = "nvidia/Nemotron-3_5-Lightning"
 _ULTRA_UNUSED: Final = "nvidia/Nemotron-3-Ultra-550b-a55b"
 
 MODELS: Final = (SUPER, NANO)
+# What the TUI prints next to each step. Labels only; the ids stay above.
+LABELS: Final = {SUPER: "Super", NANO: "Nano"}
 ALL_KNOWN_MODELS: Final = (SUPER, NANO, _LIGHTNING_UNUSED, _ULTRA_UNUSED)
 
 
