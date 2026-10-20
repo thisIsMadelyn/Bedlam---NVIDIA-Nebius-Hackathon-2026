@@ -293,3 +293,36 @@ Settled; reopen only with new information.
 - City Winner awards
 - Concurrent fault injection
 - A third model in the map
+
+---
+
+## 7. Backlog
+
+Ideas captured, not scheduled. Each one needs a phase and a yes before work starts.
+
+### Slash commands in the TUI
+
+Raised 20 Oct. A `/` command line inside the TUI, for example:
+
+- `/status` — current cycle (1, 2 or escalation), active fault and its layer
+- `/trace` — model call log (call site, model, tokens, latency) and Tavily calls
+- `/why` — why this specialist was picked: per-layer Tavily weights and the basis
+- `/patched` — developer signals the patch is in, Bedlam re-probes
+- `/seed` — show the root seed so a judge can reproduce the run
+- `/help` — list the commands
+
+Constraints: no command may make the trade-off decision on the developer's behalf
+(`/choose a` is fine, `/auto` is not). Help output must fit 82 columns.
+
+### Agent and resource usage on screen
+
+Raised 20 Oct by the judges, who asked to see agent and resource usage. Rendered
+with ASCII (bars, sparklines) so it stays inside 82 columns. Candidates:
+
+- Per-model calls, tokens and latency, read from the existing model call log
+- Fallbacks (Super → Nano) shown explicitly
+- Tavily calls made this run and credits used
+- Target stack load per container (CPU, memory) during each fault
+
+Overlaps with the Phase 3 AGENT panel, so it may fit there. Container stats may
+need a new dependency — ask before adding one.
