@@ -25,7 +25,10 @@ from bedlam.trace import Trace
 
 
 def _run_once(
-    root_seed: int, trace_path: Path, toxiproxy: FakeToxiproxy | None = None
+    root_seed: int,
+    trace_path: Path,
+    toxiproxy: FakeToxiproxy | None = None,
+    events: list[tuple[str, dict]] | None = None,
 ) -> tuple[dict, FakeToxiproxy, FakeSearchBackend]:
     toxiproxy = toxiproxy or FakeToxiproxy()
     backend = FakeSearchBackend(default_search_results())
@@ -41,6 +44,8 @@ def _run_once(
         manifest=manifest,
         root_seed=root_seed,
     )
+    if events is not None:
+        deps.on_event = lambda kind, fields: events.append((kind, fields))
     trace = asyncio.run(run(deps, Trace(root_seed=root_seed, manifest=manifest)))
     trace.write(trace_path, models, search)
     return json.loads(trace_path.read_text(encoding="utf-8")), toxiproxy, backend
@@ -70,6 +75,21 @@ def test_every_model_call_is_in_the_trace_with_site_and_model(tmp_path: Path) ->
             "probe_classification", "diff_analysis"} <= sites  # fmt: skip
     assert all(c["model"].startswith("nvidia/") and c["cycle"] in (1, 2) for c in calls)
     assert len(trace["search_calls"]) == 2 * MAX_CYCLES
+
+
+def test_events_follow_the_loop_in_order(tmp_path: Path) -> None:
+    events: list[tuple[str, dict]] = []
+    trace, _, _ = _run_once(1729, tmp_path / "trace.json", events=events)
+
+    cycle_steps = ["cycle_started", "searching", "routed", "selected", "injecting", "probed",
+                   "symptom", "awaiting_patch", "patched", "fault_removed", "analysed"]  # fmt: skip
+    assert [kind for kind, _ in events] == [
+        "baseline",
+        *cycle_steps * MAX_CYCLES,
+        "escalation_pending",
+    ]
+    injected = [fields["fault"] for kind, fields in events if kind == "injecting"]
+    assert injected == trace["fault_sequence"]
 
 
 def test_cycle_two_searches_away_from_what_cycle_one_searched(tmp_path: Path) -> None:
@@ -126,7 +146,7 @@ def test_failure_mid_cycle_still_writes_a_failed_trace(tmp_path: Path, monkeypat
     monkeypatch.setattr(loop, "snapshot", probe_for(toxiproxy))
     trace_path = tmp_path / "trace.json"
 
-    code = asyncio.run(loop._headless(1729, loop.DEFAULT_PATCH_DIR, trace_path))
+    code = asyncio.run(loop.execute(1729, ScriptedPatchSource(), trace_path))
 
     assert code == 1
     trace = json.loads(trace_path.read_text(encoding="utf-8"))
