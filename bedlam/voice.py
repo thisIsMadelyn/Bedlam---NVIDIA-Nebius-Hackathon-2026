@@ -8,6 +8,9 @@ feeds a decision.
 A key is an event kind, optionally refined by what happened
 (`injecting:timeout`, `symptom:stalled`, `cycle_started:2`). The most
 specific key with lines wins. An event with no lines stays quiet.
+
+A moment with a line in `QUOTES` plays that quote the first time it comes
+up, ahead of the seeded pick; repeats of the moment fall back to `LINES`.
 """
 
 from __future__ import annotations
@@ -96,6 +99,20 @@ LINES: Final[dict[str, tuple[str, ...]]] = {
     ),
 }
 
+# Film lines, one per moment that matches its scene. Played first, always.
+# Quoted without film or character names: the demo video shows no
+# third-party marks.
+QUOTES: Final[dict[str, str]] = {
+    "baseline": "everything is green. Why so serious?",
+    "selected": "{fault}. What's the most you ever lost on a coin toss?",
+    "injecting:bandwidth": "{layer}, I drink your milkshake!",
+    "injecting:connection_cut": "Here's Johnny! {layer}'s connection, meet the axe.",
+    "symptom:stalled": "{layer} stopped answering. You're gonna need a bigger boat.",
+    "awaiting_patch": "Never send a human to do a machine's job. your turn anyway.",
+    "analysed": "patch read. Resistance is futile.",
+    "escalation_pending": "I'm gonna make him an offer he can't refuse. you can, though.",
+}
+
 
 def _refine(kind: str, fields: dict[str, Any]) -> tuple[str | None, dict[str, Any]]:
     """The specific key for this event and the values its templates use."""
@@ -123,7 +140,13 @@ class Voice:
     def say(self, kind: str, fields: dict[str, Any]) -> str | None:
         refinement, values = _refine(kind, fields)
         key = f"{kind}:{refinement}" if refinement else kind
-        lines = LINES.get(key) or LINES.get(kind)
+        if key not in LINES:
+            key = kind
+        quote = QUOTES.get(key)
+        if quote is not None and quote not in self._used:
+            self._used.add(quote)
+            return quote.format(**values)
+        lines = LINES.get(key)
         if not lines:
             return None
         fresh = [line for line in lines if line not in self._used] or list(lines)
