@@ -148,7 +148,9 @@ raw invocation.
 - Async throughout the probe and model layers.
 - Structured logging (JSON), never bare `print` outside the TUI.
 - Prompts live in `bedlam/prompts/` as files, not as string literals inside logic.
-- The TUI is **82 columns**. Verify at exactly 82 before committing any layout change.
+- The TUI is **fluid with an 82-column minimum**: it fills the terminal and must stay
+  fully readable at exactly 82. Verify at 82 and at a wide size before committing any
+  layout change.
 
 ---
 
@@ -160,5 +162,5 @@ raw invocation.
 - Add a third model, a fourth specialist, or a third cycle.
 - Replace the templated voice layer with a model call. It is templated on purpose:
   determinism, zero latency, zero cost.
-- Make the TUI wider than 82 columns.
+- Let anything wrap or clip at 82 columns (the TUI may grow wider, never need more).
 - Write a commit message in any language other than English.

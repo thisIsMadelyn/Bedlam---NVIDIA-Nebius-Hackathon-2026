@@ -167,7 +167,8 @@ Risk: Tavily queries returning noise. Mitigation is in the query builder — sea
 **Goal:** the loop is legible to someone watching for 90 seconds.
 
 Artifacts:
-- Textual TUI, 82 columns, header showing blast radius and cycle counter
+- Textual TUI, fluid with an 82-column minimum (changed 20 Oct from a fixed 82),
+  header showing blast radius and cycle counter
 - Panels: TIMELINE, SYSTEM, AGENT
 - AGENT panel shows **which model answered each step** — this is what turns the model
   map from a claim in the README into something demonstrated on screen
@@ -304,6 +305,25 @@ Settled; reopen only with new information.
 ## 7. Backlog
 
 Ideas captured, not scheduled. Each one needs a phase and a yes before work starts.
+
+### Real patch mode
+
+Approved 20 Oct, to land before the 26 Oct feature freeze. Pressing P today
+sends a prepared diff from `demo/patches/`; the analysis of it is live, but
+the developer did not write it, and the product promise is "it reads your
+patch".
+
+- While a fault is live, the developer edits `targets/fastapi-boilerplate`
+  (already a git submodule) in their own editor.
+- P reads the real `git diff` of that working tree. An empty diff is
+  reported on screen, not passed on.
+- The prepared diffs stay as an explicit fallback flag, so the video and a
+  judge's run still reproduce.
+- Limit, stated on screen and in the README: the edit is not hot-loaded into
+  the running container. Recovery comes from removing the fault. Rebuilding
+  the API container per round costs about a minute; decide separately.
+- Other target repos stay out of scope until after submission: each needs
+  its own compose stack, topology and Toxiproxy wiring.
 
 ### Slash commands in the TUI
 
