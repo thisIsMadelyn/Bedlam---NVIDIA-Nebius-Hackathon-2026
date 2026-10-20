@@ -4,10 +4,11 @@ The loop runs inside the app as a worker and reports each step through its
 event hook. The TUI only observes: nothing on screen feeds a decision, and
 the developer's one input to the loop is saying the patch is in.
 
-Panels, top to bottom: header (seed, cycle, specialist, blast radius), the
-phase strip, SYSTEM (per-layer health and the live fault), TIMELINE (what
-the loop did, in order), AGENT (every model call with the model that
-answered it, and every Tavily call).
+Top to bottom: header (round, step, seed); NOW, a plain-language guide to
+what is happening, where to look and whether to act (`bedlam/guide.py`);
+YOUR APP (per-layer health and the live fault); WHAT BEDLAM DID (each step
+in order, with Bedlam's voice); AI MODELS (every model call with the model
+that answered it, and every Tavily call); the key legend.
 
 Run: python -m bedlam.tui
 """
@@ -30,6 +31,18 @@ from textual.containers import Vertical
 from textual.widgets import RichLog, Static
 
 from bedlam import seed as seeding
+from bedlam.guide import (
+    APP,
+    EARLY_PRESS,
+    LOG,
+    MODELS,
+    PRESSED,
+    STARTING,
+    STEPS,
+    STOPPED,
+    Guidance,
+    guidance,
+)
 from bedlam.logging import redirect
 from bedlam.loop import MAX_CYCLES, execute
 from bedlam.models.client import ModelClient
@@ -45,21 +58,6 @@ LINE: Final = WIDTH - 6
 _BAR: Final = 20
 _BAR_CEILING_MS: Final = 2000.0
 _REPO_ROOT: Final = Path(__file__).resolve().parents[1]
-
-# The loop's steps, as the phase strip names them, and which event lights each.
-PHASES: Final = ("search", "route", "select", "inject", "probe", "patch", "analyse")
-_PHASE_OF: Final = {
-    "searching": "search",
-    "routed": "route",
-    "selected": "select",
-    "injecting": "inject",
-    "probed": "probe",
-    "symptom": "probe",
-    "awaiting_patch": "patch",
-    "patched": "patch",
-    "fault_removed": "patch",
-    "analysed": "analyse",
-}
 
 
 def fit(text: str, width: int = LINE) -> str:
@@ -118,7 +116,8 @@ class BedlamApp(App[int]):
     Screen {{ align: center top; }}
     #frame {{ width: {WIDTH}; height: 100%; }}
     #header {{ height: 1; background: $error; color: $text; text-style: bold; }}
-    #phases {{ height: 1; }}
+    #now {{ height: 5; border: round $accent; padding: 0 1; }}
+    #now.your-turn {{ border: heavy $warning; background: $warning 20%; }}
     .panel {{ border: round $panel-lighten-2; padding: 0 1; }}
     #system {{ height: 6; }}
     #timeline {{ height: 1fr; min-height: 6; }}
@@ -126,7 +125,7 @@ class BedlamApp(App[int]):
     RichLog {{ scrollbar-size-vertical: 1; }}
     #footer {{ height: 1; color: $text-muted; }}
     """
-    BINDINGS = [("p", "patch", "patch is in"), ("q", "quit", "quit")]
+    BINDINGS = [("p", "patch", "apply the prepared fix"), ("q", "quit", "quit")]
 
     def __init__(self, root_seed: int, patches: PatchSource, launch: Launch) -> None:
         super().__init__()
@@ -139,9 +138,7 @@ class BedlamApp(App[int]):
         self._seen_calls = 0
         self._seen_searches = 0
         self._cycle = 0
-        self._phase: str | None = None
-        self._done: set[str] = set()
-        self._specialist = "-"
+        self.now: Guidance = STARTING
         self._blast: list[str] = []
         self._fault: str | None = None
         self._health: dict[str, dict[str, Any]] = {}
@@ -150,21 +147,22 @@ class BedlamApp(App[int]):
     def compose(self) -> ComposeResult:
         with Vertical(id="frame"):
             yield Static(id="header")
-            yield Static(id="phases")
+            now = Static(id="now")
+            now.border_title = "NOW"
+            yield now
             system = Static(id="system", classes="panel")
-            system.border_title = "SYSTEM"
+            system.border_title = f"{APP} · health of each part"
             yield system
             timeline = RichLog(id="timeline", classes="panel", wrap=False)
-            timeline.border_title = "TIMELINE"
+            timeline.border_title = f"{LOG} · newest at the bottom"
             yield timeline
             agent = RichLog(id="agent", classes="panel", wrap=False)
-            agent.border_title = "AGENT"
+            agent.border_title = f"{MODELS} · which model did each step"
             yield agent
             yield Static(id="footer")
 
     def on_mount(self) -> None:
         self._render_chrome()
-        self._footer("running. q quits")
         self.set_interval(0.2, self._drain_calls)
         self.run_worker(self._run(), exclusive=True)
 
@@ -175,8 +173,9 @@ class BedlamApp(App[int]):
             self.exit_code = 1
             self._say(f"run failed: {type(exc).__name__}: {exc}", style="bold red")
         self._drain_calls()
-        outcome = "completed" if self.exit_code == 0 else "failed"
-        self._footer(f"run {outcome}. q quits")
+        if self.exit_code != 0:
+            self.now = STOPPED
+        self._render_chrome()
 
     # -- inputs ---------------------------------------------------------------
 
@@ -184,10 +183,8 @@ class BedlamApp(App[int]):
         self._models, self._search = models, search
 
     def action_patch(self) -> None:
-        if self.patches.release():
-            self._footer("patch received. reading it")
-        else:
-            self._footer("no fault is waiting on a patch yet")
+        self.now = PRESSED if self.patches.release() else self.now.nudged(EARLY_PRESS)
+        self._render_chrome()
 
     # -- loop events ----------------------------------------------------------
 
@@ -197,11 +194,7 @@ class BedlamApp(App[int]):
         self._drain_calls()
         if kind == "cycle_started":
             self._cycle = fields["cycle"]
-            self._done.clear()
-        if kind in _PHASE_OF:
-            if self._phase and self._phase != _PHASE_OF[kind]:
-                self._done.add(self._phase)
-            self._phase = _PHASE_OF[kind]
+        self.now = guidance(kind, fields) or self.now
         handler = getattr(self, f"_on_{kind}", None)
         if handler is not None:
             handler(fields)
@@ -224,9 +217,8 @@ class BedlamApp(App[int]):
 
     def _on_routed(self, fields: dict[str, Any]) -> None:
         routing = fields["routing"]
-        self._specialist = fields["specialist"]
         weights = " · ".join(f"{k} {v:.2f}" for k, v in routing["weights"].items())
-        self._say(f"routed to {self._specialist} ({routing['basis']}: {weights})")
+        self._say(f"routed to {fields['specialist']} ({routing['basis']}: {weights})")
 
     def _on_selected(self, fields: dict[str, Any]) -> None:
         selection = fields["selection"]
@@ -250,8 +242,7 @@ class BedlamApp(App[int]):
             self._say(line, style="yellow")
 
     def _on_awaiting_patch(self, fields: dict[str, Any]) -> None:
-        self._say("waiting for your patch. press p when it is in", style="bold")
-        self._footer("waiting for your patch. p when it is in, q quits")
+        self._say("waiting for your fix. press p to apply the prepared one", style="bold")
 
     def _on_patched(self, fields: dict[str, Any]) -> None:
         patch = fields["patch"]
@@ -261,7 +252,6 @@ class BedlamApp(App[int]):
         self._health = fields["snapshot"]
         self._fault, self._blast = None, []
         self._say("fault removed: " + self._health_line(), style="green")
-        self._footer("running. q quits")
 
     def _on_analysed(self, fields: dict[str, Any]) -> None:
         analysis = fields["analysis"]
@@ -270,10 +260,8 @@ class BedlamApp(App[int]):
         if analysis["gaps"]:
             for line in wrap("gaps: " + "; ".join(analysis["gaps"]), indent=6):
                 self._say(line, style="dim")
-        self._done.add("analyse")
 
     def _on_escalation_pending(self, fields: dict[str, Any]) -> None:
-        self._phase = None
         self._say("two cycles done. the trade-off escalation is next", style="bold")
 
     # -- agent panel ----------------------------------------------------------
@@ -317,25 +305,28 @@ class BedlamApp(App[int]):
     # -- rendering ------------------------------------------------------------
 
     def _render_chrome(self) -> None:
-        cycle = f"{self._cycle}/{MAX_CYCLES}" if self._cycle else "-"
-        blast = ",".join(self._blast) or "-"
-        header = (
-            f" BEDLAM  seed {self.root_seed}  cycle {cycle}  "
-            f"specialist {self._specialist}  blast {blast}"
-        )
-        self.query_one("#header", Static).update(Text(fit(header, WIDTH).ljust(WIDTH)))
+        now = self.now
+        where = f"round {self._cycle} of {MAX_CYCLES}" if self._cycle else "not started"
+        step = f"step {now.step} of {STEPS}: " if now.step else ""
+        right = f"seed {self.root_seed} "
+        left = fit(f" BEDLAM   {where}   {step}{now.title}", WIDTH - len(right))
+        self.query_one("#header", Static).update(Text(left.ljust(WIDTH - len(right)) + right))
 
-        strip = Text(" ")
-        for i, phase in enumerate(PHASES):
-            if i:
-                strip.append(" › ", style="dim")
-            if phase == self._phase:
-                strip.append(f" {phase.upper()} ", style="bold reverse")
-            elif phase in self._done:
-                strip.append(phase, style="green")
-            else:
-                strip.append(phase, style="dim")
-        self.query_one("#phases", Static).update(strip)
+        box = self.query_one("#now", Static)
+        box.set_class(now.your_turn, "your-turn")
+        body = Text()
+        for i, line in enumerate(now.lines):
+            last = i == len(now.lines) - 1
+            style = "bold" if i == 0 else "bold yellow" if last and now.your_turn else ""
+            body.append(fit(line) + ("" if last else "\n"), style=style)
+        box.update(body)
+
+        keys = Text(" ")
+        keys.append(" P ", style="bold reverse" if now.your_turn else "dim reverse")
+        keys.append(" apply the prepared fix    ", style="bold" if now.your_turn else "dim")
+        keys.append(" Q ", style="dim reverse")
+        keys.append(" quit", style="dim")
+        self.query_one("#footer", Static).update(keys)
 
         system = Text()
         for layer in Layer:
@@ -371,9 +362,6 @@ class BedlamApp(App[int]):
         line = Text(f"{cycle} ", style="dim")
         line.append(fit(text, SAY), style=style)
         self.query_one("#timeline", RichLog).write(line)
-
-    def _footer(self, text: str) -> None:
-        self.query_one("#footer", Static).update(Text(fit(" " + text, WIDTH), style="dim"))
 
 
 def main(argv: list[str] | None = None) -> int:
