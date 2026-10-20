@@ -24,6 +24,7 @@ from bedlam.trace import Trace
 from bedlam.tui import WIDTH, BedlamApp, GatedPatchSource
 
 SIZE = (WIDTH, 30)
+LAYERS = ("api", "db", "cache")
 
 
 def _app() -> BedlamApp:
@@ -105,5 +106,27 @@ def test_p_before_a_fault_is_live_does_not_skip_a_patch() -> None:
         assert gate.release()
         patch = await asyncio.wait_for(waiter, timeout=1)
         assert patch.cycle == 1
+
+    asyncio.run(scenario())
+
+
+def test_probes_fill_together_then_settle_on_their_results() -> None:
+    def rows(app: BedlamApp) -> list[str]:
+        strips = app.screen._compositor.render_strips()
+        return [s.text for s in strips if any(f" {layer} " in s.text for layer in LAYERS)]
+
+    async def scenario() -> None:
+        app = BedlamApp(1729, ScriptedPatchSource(), lambda app: asyncio.sleep(3600))
+        async with app.run_test(size=SIZE) as pilot:
+            app.on_loop_event("probing", {"cycle": 1})
+            await pilot.pause(0.3)
+            checking = [row for row in rows(app) if "checking" in row]
+            assert len(checking) == len(LAYERS), "the three probes should fill together"
+            snapshot = {
+                layer: {"status": "up", "latency_ms": 5.0, "error": None} for layer in LAYERS
+            }
+            app.on_loop_event("probed", {"cycle": 1, "snapshot": snapshot})
+            await pilot.pause(0.1)
+            assert not [row for row in rows(app) if "checking" in row]
 
     asyncio.run(scenario())

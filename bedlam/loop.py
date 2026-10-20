@@ -90,9 +90,10 @@ async def run(deps: LoopDeps, trace: Trace) -> Trace:
                 extra={"fields": {"proxy": endpoint.proxy_name, "toxics": leftover}},
             )
 
+    emit = deps.on_event
+    emit("probing", {"cycle": None})
     baseline = await deps.probe()
     trace.baseline = snapshot_to_dict(baseline)
-    emit = deps.on_event
     emit("baseline", {"snapshot": trace.baseline})
     down = sorted(layer.value for layer, r in baseline.items() if r.status is not HealthStatus.UP)
     if down:
@@ -187,6 +188,7 @@ async def run(deps: LoopDeps, trace: Trace) -> Trace:
             # on the client must still be removed. Removing a toxic that was
             # never created is a 404, which delete_toxic treats as done.
             await fault.apply(deps.faults)
+            emit("probing", {"cycle": cycle})
             during = await deps.probe()
             record["probe_during_fault"] = snapshot_to_dict(during)
             emit("probed", {"cycle": cycle, "snapshot": record["probe_during_fault"]})
@@ -199,6 +201,7 @@ async def run(deps: LoopDeps, trace: Trace) -> Trace:
             emit("patched", {"cycle": cycle, "patch": record["patch"]})
         finally:
             await fault.remove(deps.faults)
+        emit("probing", {"cycle": cycle})
         record["probe_after_removal"] = snapshot_to_dict(await deps.probe())
         emit("fault_removed", {"cycle": cycle, "snapshot": record["probe_after_removal"]})
 

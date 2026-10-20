@@ -15,8 +15,9 @@ from bedlam.tui import SAY
 from bedlam.voice import LINES, Voice
 
 EVENTS = {
-    "baseline", "cycle_started", "searching", "routed", "selected", "injecting", "probed",
-    "symptom", "awaiting_patch", "patched", "fault_removed", "analysed", "escalation_pending",
+    "probing", "baseline", "cycle_started", "searching", "routed", "selected", "injecting",
+    "probed", "symptom", "awaiting_patch", "patched", "fault_removed", "analysed",
+    "escalation_pending",
 }  # fmt: skip
 
 

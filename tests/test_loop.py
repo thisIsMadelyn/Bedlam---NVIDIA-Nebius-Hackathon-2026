@@ -81,9 +81,11 @@ def test_events_follow_the_loop_in_order(tmp_path: Path) -> None:
     events: list[tuple[str, dict]] = []
     trace, _, _ = _run_once(1729, tmp_path / "trace.json", events=events)
 
-    cycle_steps = ["cycle_started", "searching", "routed", "selected", "injecting", "probed",
-                   "symptom", "awaiting_patch", "patched", "fault_removed", "analysed"]  # fmt: skip
+    cycle_steps = ["cycle_started", "searching", "routed", "selected", "injecting", "probing",
+                   "probed", "symptom", "awaiting_patch", "patched", "probing", "fault_removed",
+                   "analysed"]  # fmt: skip
     assert [kind for kind, _ in events] == [
+        "probing",
         "baseline",
         *cycle_steps * MAX_CYCLES,
         "escalation_pending",

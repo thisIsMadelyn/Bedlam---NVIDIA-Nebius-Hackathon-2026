@@ -20,6 +20,7 @@ import asyncio
 import math
 import os
 import textwrap
+import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any, Final
@@ -48,6 +49,7 @@ from bedlam.loop import MAX_CYCLES, execute
 from bedlam.models.client import ModelClient
 from bedlam.models.map import LABELS
 from bedlam.patches import DEFAULT_PATCH_DIR, Patch, PatchSource, ScriptedPatchSource
+from bedlam.probes.result import DEFAULT_TIMEOUT_S
 from bedlam.search.tavily import SearchClient
 from bedlam.topology import Layer
 from bedlam.voice import Voice
@@ -142,6 +144,8 @@ class BedlamApp(App[int]):
         self._blast: list[str] = []
         self._fault: str | None = None
         self._health: dict[str, dict[str, Any]] = {}
+        # Display only: when the running probes started, for the fill animation.
+        self._probing_since: float | None = None
         self.exit_code: int | None = None
 
     def compose(self) -> ComposeResult:
@@ -164,6 +168,7 @@ class BedlamApp(App[int]):
     def on_mount(self) -> None:
         self._render_chrome()
         self.set_interval(0.2, self._drain_calls)
+        self.set_interval(0.05, self._tick_probes)
         self.run_worker(self._run(), exclusive=True)
 
     async def _run(self) -> None:
@@ -204,7 +209,11 @@ class BedlamApp(App[int]):
                 self._say(part, style="italic magenta")
         self._render_chrome()
 
+    def _on_probing(self, fields: dict[str, Any]) -> None:
+        self._probing_since = time.monotonic()
+
     def _on_baseline(self, fields: dict[str, Any]) -> None:
+        self._probing_since = None
         self._health = fields["snapshot"]
         self._say("baseline: " + self._health_line(), style="green")
 
@@ -232,6 +241,7 @@ class BedlamApp(App[int]):
         self._say(f"injecting {self._fault}, blast radius {', '.join(self._blast)}", "bold red")
 
     def _on_probed(self, fields: dict[str, Any]) -> None:
+        self._probing_since = None
         self._health = fields["snapshot"]
         self._say("under fault: " + self._health_line(), style="yellow")
 
@@ -249,6 +259,7 @@ class BedlamApp(App[int]):
         self._say(f"patch in: {patch['source']} ({patch['chars']} chars)")
 
     def _on_fault_removed(self, fields: dict[str, Any]) -> None:
+        self._probing_since = None
         self._health = fields["snapshot"]
         self._fault, self._blast = None, []
         self._say("fault removed: " + self._health_line(), style="green")
@@ -329,7 +340,15 @@ class BedlamApp(App[int]):
         self.query_one("#footer", Static).update(keys)
 
         system = Text()
-        for layer in Layer:
+        if self._probing_since is not None:
+            # The three probes run at once, so their lines fill together, on
+            # the latency bar's own scale: each settles where its result lands.
+            elapsed = min(time.monotonic() - self._probing_since, DEFAULT_TIMEOUT_S)
+            for layer in Layer:
+                system.append(f"{layer.value:<6} {'...':<5} ", style="cyan")
+                system.append(latency_bar(elapsed * 1000), style="cyan")
+                system.append(f" {elapsed * 1000:>8.0f} ms  checking\n", style="cyan")
+        for layer in Layer if self._probing_since is None else ():
             result = self._health.get(layer.value)
             if result is None:
                 system.append(f"{layer.value:<6} {'-':<5} {'·' * _BAR}\n", style="dim")
@@ -348,6 +367,10 @@ class BedlamApp(App[int]):
         fault = f"{self._fault} live, blast {', '.join(self._blast)}" if self._fault else "none"
         system.append(fit(f"fault  {fault}"), style="bold red" if self._fault else "dim")
         self.query_one("#system", Static).update(system)
+
+    def _tick_probes(self) -> None:
+        if self._probing_since is not None:
+            self._render_chrome()
 
     def _health_line(self) -> str:
         parts = []
