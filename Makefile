@@ -1,4 +1,4 @@
-.PHONY: smoke lint fmt up down run headless test prove-routing
+.PHONY: smoke lint fmt up down run headless record test prove-routing
 
 smoke:
 	python scripts/smoke_nebius.py
@@ -23,6 +23,10 @@ run:
 
 headless:
 	python -m bedlam.loop --headless
+
+# Phase 2 gate: one live run, recorded for the replay determinism test.
+record:
+	python -m bedlam.loop --headless --record tests/fixtures/replay-seed1729.json --seed 1729
 
 # Phase 2 gate: live Tavily output changes which specialist is selected.
 prove-routing:

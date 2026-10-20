@@ -34,10 +34,11 @@ from bedlam.patches import DEFAULT_PATCH_DIR, PatchSource, ScriptedPatchSource
 from bedlam.probes import HealthStatus, ProbeResult, snapshot
 from bedlam.probes.classify import Symptom
 from bedlam.probes.classify import classify as classify_probe
+from bedlam.replay import Recording, RecordingSearchBackend, RecordingTransport, recording_probe
 from bedlam.router import classify_results, route
 from bedlam.search.manifest import Dependency, load_manifest
 from bedlam.search.query import formulate
-from bedlam.search.tavily import SearchClient, TavilyBackend, merge
+from bedlam.search.tavily import SearchBackend, SearchClient, TavilyBackend, merge
 from bedlam.select import select_fault
 from bedlam.specialists import SPECIALISTS, Candidate
 from bedlam.topology import TOPOLOGY, Layer
@@ -186,10 +187,20 @@ async def run(deps: LoopDeps, trace: Trace) -> Trace:
     return trace
 
 
-async def _headless(root_seed: int, patch_dir: Path, trace_path: Path) -> int:
+async def _headless(
+    root_seed: int, patch_dir: Path, trace_path: Path, record_path: Path | None = None
+) -> int:
     transport = OpenAITransport()
     models = ModelClient(transport, root_seed=root_seed)
-    search = SearchClient(TavilyBackend())
+    backend: SearchBackend = TavilyBackend()
+    probe: Callable[[], Awaitable[dict[Layer, ProbeResult]]] = snapshot
+    # Recording wraps the live calls; it never replaces them.
+    recording = Recording(root_seed=root_seed) if record_path else None
+    if recording is not None:
+        models = ModelClient(RecordingTransport(transport, recording), root_seed=root_seed)
+        backend = RecordingSearchBackend(backend, recording)
+        probe = recording_probe(snapshot, recording)
+    search = SearchClient(backend)
     manifest = load_manifest()
     trace = Trace(root_seed=root_seed, manifest=manifest)
     try:
@@ -198,7 +209,7 @@ async def _headless(root_seed: int, patch_dir: Path, trace_path: Path) -> int:
                 models=models,
                 search=search,
                 faults=faults,
-                probe=snapshot,
+                probe=probe,
                 patches=ScriptedPatchSource(patch_dir),
                 manifest=manifest,
                 root_seed=root_seed,
@@ -210,6 +221,9 @@ async def _headless(root_seed: int, patch_dir: Path, trace_path: Path) -> int:
         _LOG.exception("run failed")
     finally:
         trace.write(trace_path, models, search)
+        if recording is not None and record_path is not None:
+            recording.fault_sequence = trace.to_dict(models, search)["fault_sequence"]
+            recording.write(record_path)
         await transport.aclose()
     log_event(
         _LOG,
@@ -229,6 +243,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--seed", type=int, default=None, help="root seed (default: BEDLAM_SEED)")
     parser.add_argument("--patches", type=Path, default=DEFAULT_PATCH_DIR)
     parser.add_argument("--trace", type=Path, default=None, help="trace output path")
+    parser.add_argument(
+        "--record", type=Path, default=None, help="also write a replay recording to this path"
+    )
     args = parser.parse_args(argv)
 
     if not args.headless:
@@ -238,7 +255,7 @@ def main(argv: list[str] | None = None) -> int:
     root_seed = args.seed if args.seed is not None else seeding.root_seed()
     os.environ[seeding.ROOT_SEED_ENV] = str(root_seed)
     trace_path = args.trace or _REPO_ROOT / "traces" / f"headless-seed{root_seed}.json"
-    return asyncio.run(_headless(root_seed, args.patches, trace_path))
+    return asyncio.run(_headless(root_seed, args.patches, trace_path, args.record))
 
 
 if __name__ == "__main__":
