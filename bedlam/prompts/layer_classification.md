@@ -17,7 +17,9 @@ Layers:
 Judge by what failed, not by which words appear. An issue titled "uvicorn
 hangs" that turns out to be caused by an exhausted SQLAlchemy pool is `db`.
 
-Label every result exactly once, using its `index`. Reply with one JSON
-object and nothing else:
+Label every result exactly once, using its `index`. For each result,
+first name the component that failed (a library, server or tool, such as
+`redis-py` or `asyncpg`), then choose the layer that component belongs to.
+Reply with one JSON object and nothing else:
 
-{"labels": [{"index": 0, "layer": "api|db|cache|none"}, ...]}
+{"labels": [{"index": 0, "component": "<name>", "layer": "api|db|cache|none"}, ...]}

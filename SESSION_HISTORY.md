@@ -47,9 +47,6 @@ badges of either kind.
     sequence across three runs" to reproducibility given recorded inputs.
   - Deferred, may not be done: show fault selection only the structured
     candidate fields, not the hypothesis prose.
-  - Layer classification mislabels Redis results: across two live runs
-    Nano labelled redis-py issues `db`, although the prompt names Redis and
-    redis-py as `cache`. The cache specialist is starved as a result.
 
   Later in the session, `make prove-routing` showed live that Tavily output
   changes the specialist. Three searches gave two distinct specialists
@@ -63,6 +60,17 @@ badges of either kind.
     live Nano, with the model side held fixed. It writes the evidence to
     `traces/routing-proof.json` and exits non-zero if routing does not
     follow the search output.
+  - 🐛 Bug fix — Layer classification labelled Redis results `db` (20 of 20
+    labels on a saved redis-py result set), so the cache specialist was
+    never reached. Nano now names the failed component of each result
+    before choosing its layer. On the same saved sets, Redis went to
+    `cache` 20 of 20 and asyncpg/SQLAlchemy stayed `db` 20 of 20. An
+    explicit "Redis is cache" rule was tested and left out: naming the
+    component was enough on its own. `make prove-routing` now reaches all
+    three specialists (cache, db, api) on two live runs, up from db, db, api.
+  - 🐛 Bug fix — Layer classification had `max_tokens=256`, which truncated
+    the reply mid-JSON on a 15-result set. It is now 768, enough for the
+    loop's maximum of 10 results with the component field.
   - 🐛 Bug fix — A run killed while a fault was live left its toxic in
     Toxiproxy. The next run failed with HTTP 409 when re-creating the same
     toxic name, or failed the baseline with a misleading "Run `make up`"

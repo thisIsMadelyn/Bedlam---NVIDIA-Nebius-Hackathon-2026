@@ -83,7 +83,9 @@ CALL_SITES: Final[dict[CallSite, ModelSpec]] = {
     CallSite.LAYER_CLASSIFICATION: ModelSpec(
         model=NANO,
         temperature=0.0,
-        max_tokens=256,
+        # Up to 10 results per call, each naming its failed component before
+        # its layer. 256 truncated the reply mid-JSON.
+        max_tokens=768,
         fallback=None,
         rationale="Routes live search results to a specialist. Classification, not reasoning.",
     ),
