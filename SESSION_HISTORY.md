@@ -23,6 +23,39 @@ badges of either kind.
 
 ---
 
+## Session [2026-10-20-2318]
+
+- **Start status:** `287c95b`, working tree clean, 48 tests passing.
+  Phase 2 complete; Phase 3 (TUI) not started.
+- **End status:** `f874fae`, working tree clean apart from this entry, 85
+  tests passing, lint and format clean. The Phase 3 TUI is built and was
+  run live end to end. The Phase 3 done-when boxes are not ticked yet.
+  Real patch mode is now the default: P reads the developer's own edit
+  with git and waits on an empty diff; `--scripted` keeps the old one-key
+  patch. Other target repos are deferred until after submission. Next:
+  close Phase 3, then Phase 4 (trade-off escalation).
+- **Badges:**
+  - 🆕 Addition — Textual dependency; loop events through an optional
+    observer hook; the TUI with YOUR APP, WHAT BEDLAM DID and AI MODELS
+    panels, fluid above an 82-column minimum, in the Bedlam palette.
+  - 🆕 Addition — `bedlam/voice.py`: templated, seeded voice lines, with
+    eight film lines played first at their matching moments; the latest
+    line holds still in a BEDLAM SAYS row.
+  - 🆕 Addition — `bedlam/guide.py`: a NOW box that says which step the
+    loop is in, where to look and when it is the developer's turn; probe
+    lines fill while probes run.
+  - 🆕 Addition — Real patch mode (`bedlam/patches.py`): git snapshots of
+    `targets/fastapi-boilerplate` before and after the developer's edit.
+  - 🆕 Addition — A command line with a cursor: `/help`, `/patch`,
+    `/quit`, ready for later slash commands.
+  - 🆕 Addition — `bedlam/stats.py`: per-container CPU (with sparkline)
+    and memory from `docker stats`, display only, the judges' request.
+  - 🐛 Bug fix — The BEDLAM SAYS text was invisible: the label's
+    background style leaked onto the line.
+  - 🐛 Bug fix — Round-2 query formulation failed with "need 2 new
+    queries"; the rejection now names each skipped query and why, so the
+    retry can fix it.
+
 ## Session [2026-10-20-2114]
 
 - **Start status:** `c62ba28`. Uncommitted: the Redis labelling fix and
