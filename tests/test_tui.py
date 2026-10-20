@@ -13,7 +13,7 @@ from fakes import (
     plausible_model,
     probe_for,
 )
-from textual.widgets import RichLog
+from textual.widgets import RichLog, Static
 
 from bedlam.loop import MAX_CYCLES, LoopDeps, run
 from bedlam.models.client import ModelClient
@@ -128,5 +128,25 @@ def test_probes_fill_together_then_settle_on_their_results() -> None:
             app.on_loop_event("probed", {"cycle": 1, "snapshot": snapshot})
             await pilot.pause(0.1)
             assert not [row for row in rows(app) if "checking" in row]
+
+    asyncio.run(scenario())
+
+
+def test_bedlam_says_holds_the_latest_line_and_marks_quotes() -> None:
+    async def scenario() -> None:
+        app = BedlamApp(1729, ScriptedPatchSource(), lambda app: asyncio.sleep(3600))
+        async with app.run_test(size=SIZE) as pilot:
+            snapshot = {
+                layer: {"status": "up", "latency_ms": 5.0, "error": None} for layer in LAYERS
+            }
+            app.on_loop_event("baseline", {"snapshot": snapshot})
+            await pilot.pause(0.1)
+            says = app.query_one("#says", Static)
+            assert "Why so serious?" in str(says.render())
+            assert app._voice.quoted
+            app.on_loop_event("cycle_started", {"cycle": 1})
+            await pilot.pause(0.1)
+            assert "Why so serious?" not in str(says.render())
+            assert not app._voice.quoted
 
     asyncio.run(scenario())

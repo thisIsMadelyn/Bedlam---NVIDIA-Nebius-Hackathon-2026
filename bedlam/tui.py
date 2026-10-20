@@ -44,7 +44,7 @@ from bedlam.guide import (
     Guidance,
     guidance,
 )
-from bedlam.logging import redirect
+from bedlam.logging import get_logger, log_event, redirect
 from bedlam.loop import MAX_CYCLES, execute
 from bedlam.models.client import ModelClient
 from bedlam.models.map import LABELS
@@ -60,6 +60,8 @@ LINE: Final = WIDTH - 6
 _BAR: Final = 20
 _BAR_CEILING_MS: Final = 2000.0
 _REPO_ROOT: Final = Path(__file__).resolve().parents[1]
+_LOG = get_logger("bedlam.tui")
+_SAYS: Final = " BEDLAM "
 
 
 def fit(text: str, width: int = LINE) -> str:
@@ -120,6 +122,7 @@ class BedlamApp(App[int]):
     #header {{ height: 1; background: $error; color: $text; text-style: bold; }}
     #now {{ height: 5; border: round $accent; padding: 0 1; }}
     #now.your-turn {{ border: heavy $warning; background: $warning 20%; }}
+    #says {{ height: 1; padding: 0 1; }}
     .panel {{ border: round $panel-lighten-2; padding: 0 1; }}
     #system {{ height: 6; }}
     #timeline {{ height: 1fr; min-height: 6; }}
@@ -154,6 +157,7 @@ class BedlamApp(App[int]):
             now = Static(id="now")
             now.border_title = "NOW"
             yield now
+            yield Static(id="says")
             system = Static(id="system", classes="panel")
             system.border_title = f"{APP} · health of each part"
             yield system
@@ -205,8 +209,15 @@ class BedlamApp(App[int]):
             handler(fields)
         line = self._voice.say(kind, fields)
         if line:
+            quoted = self._voice.quoted
+            style = "bold italic yellow" if quoted else "italic magenta"
             for part in wrap("» " + line, indent=2):
-                self._say(part, style="italic magenta")
+                self._say(part, style=style)
+            # The timeline scrolls; this line holds still until the next one.
+            says = Text(_SAYS, style="bold reverse magenta")
+            says.append(" " + fit(line, WIDTH - 2 - len(_SAYS) - 1), style=style)
+            self.query_one("#says", Static).update(says)
+            log_event(_LOG, "voice", kind=kind, cycle=self._cycle, line=line, quote=quoted)
         self._render_chrome()
 
     def _on_probing(self, fields: dict[str, Any]) -> None:

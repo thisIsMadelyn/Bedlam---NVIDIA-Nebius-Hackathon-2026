@@ -136,6 +136,8 @@ class Voice:
     def __init__(self, root_seed: int) -> None:
         self._rng: random.Random = seeding.rng(root_seed, "voice")
         self._used: set[str] = set()
+        # Whether the last line said was one of QUOTES. The TUI styles it.
+        self.quoted = False
 
     def say(self, kind: str, fields: dict[str, Any]) -> str | None:
         refinement, values = _refine(kind, fields)
@@ -143,7 +145,8 @@ class Voice:
         if key not in LINES:
             key = kind
         quote = QUOTES.get(key)
-        if quote is not None and quote not in self._used:
+        self.quoted = quote is not None and quote not in self._used
+        if quote is not None and self.quoted:
             self._used.add(quote)
             return quote.format(**values)
         lines = LINES.get(key)
