@@ -93,9 +93,29 @@ LINES: Final[dict[str, tuple[str, ...]]] = {
         "I see what you fixed. more interested in what you didn't.",
         "patch read. my next fault has read it too.",
     ),
-    "escalation_pending": (
+    "escalating": (
         "two rounds. breaking more teaches nothing. time to talk trade-offs.",
         "I could keep breaking things. the interesting part is your choice.",
+    ),
+    "trade_off": (
+        "both doors cost something. pick one.",
+        "no right answer here. just yours.",
+    ),
+    "chosen": (
+        "noted. now let me show you what that costs.",
+        "your call. here's the bill.",
+    ),
+    "showing_cost": (
+        "this is the price you just agreed to.",
+        "consider this a preview.",
+    ),
+    "cost_removed": (
+        "bill paid. for today.",
+        "that's the cost. you chose it with your eyes open.",
+    ),
+    "finished": (
+        "written down. nobody can say I didn't ask.",
+        "done. the choice was yours. it stays yours.",
     ),
 }
 
@@ -110,7 +130,7 @@ QUOTES: Final[dict[str, str]] = {
     "symptom:stalled": "{layer} stopped answering. You're gonna need a bigger boat.",
     "awaiting_patch": "Never send a human to do a machine's job. your turn anyway.",
     "analysed": "patch read. Resistance is futile.",
-    "escalation_pending": "I'm gonna make him an offer he can't refuse. you can, though.",
+    "trade_off": "I'm gonna make him an offer he can't refuse. you can, though.",
 }
 
 

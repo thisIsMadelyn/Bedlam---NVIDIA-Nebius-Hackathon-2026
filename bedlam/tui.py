@@ -1,8 +1,9 @@
 """The Bedlam terminal UI. Fills the terminal; fully readable at 82 columns.
 
 The loop runs inside the app as a worker and reports each step through its
-event hook. The TUI only observes: nothing on screen feeds a decision, and
-the developer's one input to the loop is saying the patch is in.
+event hook. The TUI only observes: nothing on screen feeds a decision. The
+developer's inputs to the loop are saying the patch is in and, after round
+2, choosing a side of the trade-off.
 
 Top to bottom: header (round, step, seed); NOW, a plain-language guide to
 what is happening, where to look and whether to act (`bedlam/guide.py`);
@@ -10,7 +11,8 @@ BEDLAM SAYS (the latest voice line, held still); YOUR APP (per-layer health
 and the live fault); WHAT BEDLAM DID (each step in order, with Bedlam's
 voice); AI MODELS (every model call with the model that answered it, and
 every Tavily call); the key legend. From `_WIDE` columns up, WHAT BEDLAM DID
-and AI MODELS sit side by side.
+and AI MODELS sit side by side. While the trade-off waits for a choice, a
+full-frame TRADE-OFF panel takes the place of the three panels.
 
 Run: python -m bedlam.tui
 """
@@ -38,8 +40,10 @@ from textual.widget import Widget
 from textual.widgets import Input, RichLog, Static
 
 from bedlam import seed as seeding
+from bedlam.escalation import KEYS, TradeOff
 from bedlam.guide import (
     APP,
+    EARLY_CHOICE,
     EARLY_PRESS,
     LOG,
     MODELS,
@@ -54,7 +58,7 @@ from bedlam.guide import (
     guidance,
 )
 from bedlam.logging import get_logger, log_event, redirect
-from bedlam.loop import MAX_CYCLES, execute
+from bedlam.loop import MAX_CYCLES, decision_path, execute
 from bedlam.models.client import CallRecord, ModelClient
 from bedlam.models.map import LABELS
 from bedlam.patches import (
@@ -102,6 +106,8 @@ _STATS_RETRY_S: Final = 5.0
 # "  cpu  12.3% ▁▂▃▄▅▆▇█ mem  220M": fits next to a minimum bar at 82 columns.
 _LOAD_WIDTH: Final = 2 + 3 + 7 + 1 + _SPARK_LEN + 1 + 3 + 6
 _BAR_MAX: Final = 60
+# "    you gain  ": the hanging indent of a trade-off option's gain and cost.
+_SIDE_INDENT: Final = 14
 _BAR_CEILING_MS: Final = 2000.0
 _REPO_ROOT: Final = Path(__file__).resolve().parents[1]
 _LOG = get_logger("bedlam.tui")
@@ -161,6 +167,34 @@ class GatedPatchSource:
         return True
 
 
+class GatedChoice:
+    """The developer's side of the trade-off: waits for A or B.
+
+    A key pressed before the trade-off is on screen is refused, never kept
+    for later: an early press must not pre-answer a question not yet asked.
+    """
+
+    def __init__(self) -> None:
+        self._chosen: asyncio.Queue[str] = asyncio.Queue(maxsize=1)
+        self.waiting = False
+        # Told when the question is open, so the keys can light up.
+        self.on_ask: Callable[[], None] = lambda: None
+
+    async def wait_for_choice(self, trade_off: TradeOff) -> str:
+        self.waiting = True
+        self.on_ask()
+        try:
+            return await self._chosen.get()
+        finally:
+            self.waiting = False
+
+    def choose(self, key: str) -> bool:
+        if not self.waiting or key not in KEYS or self._chosen.full():
+            return False
+        self._chosen.put_nowait(key)
+        return True
+
+
 Launch = Callable[["BedlamApp"], Awaitable[int]]
 StatsSource = Callable[[], Awaitable[dict[Layer, ContainerStats]]]
 
@@ -170,6 +204,7 @@ StatsSource = Callable[[], Awaitable[dict[Layer, ContainerStats]]]
 COMMANDS: Final = {
     "help": "list these commands",
     "patch": "hand over your fix, same as P",
+    "choose": "your side of the trade-off: /choose a or /choose b",
     "quit": "leave Bedlam, same as Q",
 }
 
@@ -193,6 +228,9 @@ class BedlamApp(App[int]):
         border-title-color: {ACCENT}; border-subtitle-color: {_SOFT};
     }}
     #system {{ height: 6; }}
+    #tradeoff {{ display: none; height: 1fr; border: heavy {GO}; }}
+    #frame.-escalation #tradeoff {{ display: block; }}
+    #frame.-escalation #system, #frame.-escalation #body {{ display: none; }}
     #body {{ height: 1fr; }}
     #timeline {{ height: 2fr; min-height: 6; }}
     #agent {{ height: 1fr; min-height: 9; }}
@@ -213,6 +251,8 @@ class BedlamApp(App[int]):
     """
     BINDINGS = [
         ("p", "patch", "hand over the fix"),
+        ("a", "choose('a')", "option A"),
+        ("b", "choose('b')", "option B"),
         ("q", "quit", "quit"),
         ("slash", "command", "type a command"),
         ("escape", "leave_command", "leave the command line"),
@@ -259,6 +299,12 @@ class BedlamApp(App[int]):
         self._load: dict[Layer, ContainerStats] = {}
         self._cpu: dict[Layer, deque[float]] = {layer: deque(maxlen=_SPARK_LEN) for layer in Layer}
         self._load_note = "cpu and memory: starting" if stats else ""
+        self.choices = GatedChoice()
+        self.choices.on_ask = self._render_chrome
+        self._trade_off: dict[str, Any] | None = None
+        self._escalated = False
+        # Where the run's decision record is written, said once it exists.
+        self.decision_file: Path | None = None
         self.exit_code: int | None = None
 
     def compose(self) -> ComposeResult:
@@ -268,6 +314,9 @@ class BedlamApp(App[int]):
             now.border_title = "NOW"
             yield now
             yield Static(id="says")
+            tradeoff = Static(id="tradeoff", classes="panel")
+            tradeoff.border_title = "TRADE-OFF · you choose, Bedlam does not"
+            yield tradeoff
             system = Static(id="system", classes="panel")
             system.border_title = f"{APP} · health of each part"
             yield system
@@ -327,23 +376,35 @@ class BedlamApp(App[int]):
         self.action_leave_command()
         if not text:
             return
-        name, *_ = text.lstrip("/").split(maxsplit=1) or [""]
+        name, *rest = text.lstrip("/").split(maxsplit=1) or [""]
         self._say(f"you › {text}", style=f"bold {_TEXT}")
         command = COMMANDS.get(name.lower())
         if command is None:
             self._say(f"unknown command /{name}. /help lists them", style=_SOFT)
             return
-        getattr(self, f"_command_{name.lower()}")()
+        getattr(self, f"_command_{name.lower()}")(rest[0].strip() if rest else "")
 
-    def _command_help(self) -> None:
+    def _command_help(self, arg: str) -> None:
         for name, about in COMMANDS.items():
             self._say(f"  /{name:<8} {about}", style=_SOFT)
 
-    def _command_patch(self) -> None:
+    def _command_patch(self, arg: str) -> None:
         self.action_patch()
 
-    def _command_quit(self) -> None:
+    def _command_choose(self, arg: str) -> None:
+        key = arg.lower()
+        if key not in KEYS:
+            self._say("choose a or b, e.g. /choose a", style=_SOFT)
+            return
+        self.action_choose(key)
+
+    def _command_quit(self, arg: str) -> None:
         self.exit()
+
+    def action_choose(self, key: str) -> None:
+        if not self.choices.choose(key):
+            self.now = self.now.nudged(EARLY_CHOICE)
+        self._render_chrome()
 
     def action_patch(self) -> None:
         if self.patches.release():
@@ -450,8 +511,43 @@ class BedlamApp(App[int]):
             for line in wrap(gaps, indent=6, width=self._say_width()):
                 self._say(line, style=_SOFT)
 
-    def _on_escalation_pending(self, fields: dict[str, Any]) -> None:
-        self._say("two cycles done. the trade-off escalation is next", style=f"bold {ACCENT}")
+    def _on_escalating(self, fields: dict[str, Any]) -> None:
+        self._escalated = True
+        rule = "── trade-off "
+        self._say(rule + "─" * (self._say_width() - len(rule)), style=f"bold {ACCENT}")
+
+    def _on_trade_off(self, fields: dict[str, Any]) -> None:
+        self._trade_off = fields["trade_off"]
+        self._say(f"trade-off: {self._trade_off['axis']}", style=f"bold {ACCENT}")
+        for item in self._trade_off["options"]:
+            self._say(f"  {item['key'].upper()}  {item['title']}")
+        self.query_one("#frame").add_class("-escalation")
+
+    def _on_chosen(self, fields: dict[str, Any]) -> None:
+        self.query_one("#frame").remove_class("-escalation")
+        text = f"you chose {fields['choice'].upper()}: {fields['option']['title']}"
+        self._say(text, style=f"bold {GO}")
+
+    def _on_showing_cost(self, fields: dict[str, Any]) -> None:
+        self._fault, self._blast = fields["fault"], fields["blast_radius"]
+        blast = ", ".join(self._blast)
+        self._say(f"showing the cost: {self._fault}, blast radius {blast}", style=f"bold {DAMAGE}")
+
+    def _on_cost_shown(self, fields: dict[str, Any]) -> None:
+        self._probing_since = None
+        self._health = fields["snapshot"]
+        self._say("under the cost: " + self._health_line(), style=DAMAGE)
+
+    def _on_cost_removed(self, fields: dict[str, Any]) -> None:
+        self._probing_since = None
+        self._health = fields["snapshot"]
+        self._fault, self._blast = None, []
+        self._say("cost removed: " + self._health_line(), style=GO)
+
+    def _on_finished(self, fields: dict[str, Any]) -> None:
+        escalation = fields.get("escalation") or {}
+        if escalation.get("status") == "chosen" and self.decision_file is not None:
+            self._say(f"decision record: {_shown_path(self.decision_file)}", style=f"bold {GO}")
 
     # -- agent panel ----------------------------------------------------------
 
@@ -524,6 +620,8 @@ class BedlamApp(App[int]):
         full = max(self.query_one("#frame").size.width, WIDTH)
 
         where = f"round {self._cycle} of {MAX_CYCLES}" if self._cycle else "not started"
+        if self._escalated:
+            where = "trade-off"
         step = f"step {now.step} of {STEPS}: " if now.step else ""
         right = f"seed {self.root_seed} "
         header = Text.assemble((" BEDLAM ", f"bold {_BACKGROUND} on {ACCENT}"))
@@ -549,9 +647,14 @@ class BedlamApp(App[int]):
 
         keys = Text(" ")
         lit = f"bold {_BACKGROUND} on {GO}"
-        keys.append(" P ", style=lit if now.your_turn else f"{_TEXT} on {MUTED}")
-        action = " read my fix    " if self.real else " apply the prepared fix    "
-        keys.append(action, style=f"bold {GO}" if now.your_turn else _SOFT)
+        if self.choices.waiting:
+            for key in KEYS:
+                keys.append(f" {key.upper()} ", style=lit)
+                keys.append(f" option {key.upper()}    ", style=f"bold {GO}")
+        else:
+            keys.append(" P ", style=lit if now.your_turn else f"{_TEXT} on {MUTED}")
+            action = " read my fix    " if self.real else " apply the prepared fix    "
+            keys.append(action, style=f"bold {GO}" if now.your_turn else _SOFT)
         keys.append(" Q ", style=f"{_TEXT} on {MUTED}")
         keys.append(" quit    ", style=_SOFT)
         keys.append(" / ", style=f"{_TEXT} on {MUTED}")
@@ -559,6 +662,33 @@ class BedlamApp(App[int]):
         self.query_one("#footer", Static).update(keys)
 
         self._render_system()
+        if self._trade_off is not None:
+            self._render_trade_off()
+
+    def _render_trade_off(self) -> None:
+        """Both options with equal weight: same layout, same colours, A then B."""
+        assert self._trade_off is not None
+        panel = self.query_one("#tradeoff", Static)
+        width = _inner(panel)
+        trade_off = self._trade_off
+        body = Text()
+        body.append(fit(trade_off["axis"], width) + "\n", style=f"bold {ACCENT}")
+        for line in textwrap.wrap(trade_off["why"], width=width):
+            body.append(line + "\n", style=_SOFT)
+        badge = f"bold {_BACKGROUND} on {GO}" if self.choices.waiting else f"{_TEXT} on {MUTED}"
+        for item in trade_off["options"]:
+            body.append("\n")
+            body.append(f" {item['key'].upper()} ", style=badge)
+            body.append(" " + fit(item["title"], width - 4) + "\n", style="bold")
+            for label, text in (("you gain", item["gain"]), ("you pay", item["cost"])):
+                lines = textwrap.wrap(text, width=width - _SIDE_INDENT) or [""]
+                for i, line in enumerate(lines):
+                    head = f"    {label:<9} " if i == 0 else " " * _SIDE_INDENT
+                    body.append(head, style=_SOFT)
+                    body.append(line + "\n", style=GO if label == "you gain" else DAMAGE)
+            cost = f"    Bedlam shows this cost live: {item['consequence']['id']}"
+            body.append(fit(cost, width) + "\n", style=_SOFT)
+        panel.update(body)
 
     def _render_system(self) -> None:
         panel = self.query_one("#system", Static)
@@ -652,7 +782,8 @@ class BedlamApp(App[int]):
         return _inner(self.query_one("#timeline", RichLog)) - 3
 
     def _say(self, text: str, style: str = "") -> None:
-        row = (f"c{self._cycle}" if self._cycle else "--", text, style)
+        tag = "tf" if self._escalated else f"c{self._cycle}" if self._cycle else "--"
+        row = (tag, text, style)
         self._timeline_rows.append(row)
         self.query_one("#timeline", RichLog).write(self._timeline_line(*row))
 
@@ -686,6 +817,14 @@ def _memory(size: int) -> str:
             value = size / scale
             return f"{value:.1f}{unit}" if value < 10 else f"{value:.0f}{unit}"
     return f"{size}B"
+
+
+def _shown_path(path: Path) -> str:
+    """A path relative to the repo when it is inside it, as the developer types it."""
+    try:
+        return path.resolve().relative_to(_REPO_ROOT).as_posix()
+    except ValueError:
+        return str(path)
 
 
 def _voice_style(quoted: bool) -> str:
@@ -727,9 +866,11 @@ def main(argv: list[str] | None = None) -> int:
             trace_path,
             on_event=app.on_loop_event,
             on_clients=app.attach,
+            choices=app.choices,
         )
 
     app = BedlamApp(root_seed, patches, launch, real=not args.scripted, stats=sample_stats)
+    app.decision_file = decision_path(trace_path)
     app.run()
     return app.exit_code if app.exit_code is not None else 1
 

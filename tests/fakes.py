@@ -129,6 +129,28 @@ def answer_diff_analysis(ctx: dict[str, Any], _model: str) -> Any:
     }
 
 
+def answer_tradeoff_escalation(ctx: dict[str, Any], _model: str) -> Any:
+    layer = ctx["faults_so_far"][-1]["layer"]
+    return {
+        "axis": "fail fast vs wait it out",
+        "why": f"both rounds hit how the app treats a late {layer}",
+        "options": [
+            {
+                "title": "Fail fast",
+                "gain": "a hung dependency costs one quick error",
+                "cost": "errors whenever it is merely slow",
+                "consequence_fault_id": f"{layer}.latency.2500",
+            },
+            {
+                "title": "Wait it out",
+                "gain": "a slow dependency still answers",
+                "cost": "requests pile up when it hangs",
+                "consequence_fault_id": f"{layer}.timeout.0",
+            },
+        ],
+    }
+
+
 def plausible_model() -> dict[CallSite, Handler]:
     return {
         CallSite.TAVILY_QUERY_FORMULATION: answer_query_formulation,
@@ -137,6 +159,7 @@ def plausible_model() -> dict[CallSite, Handler]:
         CallSite.FAULT_SELECTION: answer_fault_selection,
         CallSite.PROBE_CLASSIFICATION: answer_probe_classification,
         CallSite.DIFF_ANALYSIS: answer_diff_analysis,
+        CallSite.TRADEOFF_ESCALATION: answer_tradeoff_escalation,
     }
 
 

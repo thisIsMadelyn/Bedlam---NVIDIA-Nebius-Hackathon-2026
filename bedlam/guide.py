@@ -103,6 +103,17 @@ NO_CHANGES: Final = Guidance(
     your_turn=True,
 )
 EARLY_PRESS: Final = "You pressed P, but there is nothing to fix yet. Keep watching."
+EARLY_CHOICE: Final = "You: nothing to choose yet. A and B work once the trade-off is up."
+TRADE_OFF: Final = Guidance(
+    0,
+    "YOUR CHOICE",
+    (
+        "Bedlam stops breaking things. Each option below costs you something.",
+        "Read both sides. Bedlam will not choose for you.",
+        "You: press A or B.",
+    ),
+    your_turn=True,
+)
 STOPPED: Final = Guidance(
     0,
     "STOPPED",
@@ -208,13 +219,74 @@ def guidance(kind: str, fields: dict[str, Any], *, real: bool = False) -> Guidan
                 _NOTHING,
             ),
         )
-    if kind == "escalation_pending":
+    return _escalation(kind, fields)
+
+
+def _escalation(kind: str, fields: dict[str, Any]) -> Guidance | None:
+    """The NOW box after round 2: the trade-off and the cost of the choice."""
+    if kind == "escalating":
+        return Guidance(
+            0,
+            "TRADE-OFF",
+            (
+                "Two rounds done. Breaking more would teach nothing new.",
+                f"Look at {MODELS}: Super is writing your trade-off.",
+                _NOTHING,
+            ),
+        )
+    if kind == "trade_off":
+        return TRADE_OFF
+    if kind == "chosen":
+        return Guidance(
+            0,
+            "YOUR CHOICE",
+            (
+                f"You chose {fields['choice'].upper()}: {fields['option']['title']}.",
+                f"Bedlam now applies what it costs, once. Look at {APP}.",
+                _NOTHING,
+            ),
+        )
+    if kind == "showing_cost":
+        layer, blast = fields["layer"], " and ".join(fields["blast_radius"])
+        return Guidance(
+            0,
+            "THE COST",
+            (
+                f"Bedlam is {_VERB[fields['kind']]} your {layer}: the cost you accepted.",
+                f"Look at {APP}: watch the {blast} lines.",
+                _NOTHING,
+            ),
+        )
+    if kind == "cost_shown":
+        return Guidance(
+            0,
+            "THE COST",
+            (
+                "This is what your choice costs when it bites.",
+                f"Look at {APP}: red is the cost you accepted.",
+                _NOTHING,
+            ),
+        )
+    if kind == "cost_removed":
+        return Guidance(
+            0,
+            "THE COST",
+            (
+                "Bedlam removed it. Your app should turn green again.",
+                f"Look at {APP}: back to green.",
+                _NOTHING,
+            ),
+        )
+    if kind == "finished":
+        chosen = (fields.get("escalation") or {}).get("status") == "chosen"
         return Guidance(
             0,
             "DONE",
             (
-                "Two rounds finished. Next comes a trade-off that you choose.",
-                "The trade-off screen arrives in Phase 4.",
+                "Run finished. Your choice is in the trace and a decision record."
+                if chosen
+                else "Run finished. The options are in the trace; nobody chose.",
+                f"Look at {LOG}: {'where the decision record is' if chosen else 'both options'}.",
                 "You: Q quits.",
             ),
         )

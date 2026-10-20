@@ -16,6 +16,7 @@ from fakes import (
 )
 
 from bedlam import loop
+from bedlam.escalation import ScriptedChoice
 from bedlam.loop import MAX_CYCLES, LoopDeps, run
 from bedlam.models.client import ModelClient
 from bedlam.patches import ScriptedPatchSource
@@ -29,6 +30,7 @@ def _run_once(
     trace_path: Path,
     toxiproxy: FakeToxiproxy | None = None,
     events: list[tuple[str, dict]] | None = None,
+    choice: str | None = "a",
 ) -> tuple[dict, FakeToxiproxy, FakeSearchBackend]:
     toxiproxy = toxiproxy or FakeToxiproxy()
     backend = FakeSearchBackend(default_search_results())
@@ -43,6 +45,7 @@ def _run_once(
         patches=ScriptedPatchSource(),
         manifest=manifest,
         root_seed=root_seed,
+        choices=ScriptedChoice(choice) if choice else None,
     )
     if events is not None:
         deps.on_event = lambda kind, fields: events.append((kind, fields))
@@ -59,7 +62,8 @@ def test_two_cycles_complete_and_write_a_structured_trace(tmp_path: Path) -> Non
     assert len(trace["fault_sequence"]) == MAX_CYCLES
     assert len(set(trace["fault_sequence"])) == MAX_CYCLES, "a cycle repeated a fault"
     assert not toxiproxy.active, "a fault was left behind"
-    assert trace["escalation"]["status"] == "pending_phase_4"
+    assert trace["escalation"]["status"] == "chosen"
+    assert trace["escalation"]["choice"] == "a"
     for cycle in trace["cycles"]:
         assert cycle["routing"]["basis"] == "search"
         assert all(r["component"] for r in cycle["results"] if r["layer"])
@@ -72,8 +76,11 @@ def test_every_model_call_is_in_the_trace_with_site_and_model(tmp_path: Path) ->
     calls = trace["model_calls"]
     sites = {c["site"] for c in calls}
     assert {"tavily_query_formulation", "layer_classification", "tavily_synthesis",
-            "probe_classification", "diff_analysis"} <= sites  # fmt: skip
-    assert all(c["model"].startswith("nvidia/") and c["cycle"] in (1, 2) for c in calls)
+            "probe_classification", "diff_analysis", "tradeoff_escalation"} <= sites  # fmt: skip
+    assert all(c["model"].startswith("nvidia/") for c in calls)
+    # The escalation comes after the cycles, so it belongs to none of them.
+    assert all(c["cycle"] in (1, 2) for c in calls if c["site"] != "tradeoff_escalation")
+    assert [c["cycle"] for c in calls if c["site"] == "tradeoff_escalation"] == [None]
     assert len(trace["search_calls"]) == 2 * MAX_CYCLES
 
 
@@ -88,8 +95,9 @@ def test_events_follow_the_loop_in_order(tmp_path: Path) -> None:
         "probing",
         "baseline",
         *cycle_steps * MAX_CYCLES,
-        "escalation_pending",
-    ]
+        "escalating", "trade_off", "chosen", "showing_cost", "probing", "cost_shown",
+        "probing", "cost_removed", "finished",
+    ]  # fmt: skip
     injected = [fields["fault"] for kind, fields in events if kind == "injecting"]
     assert injected == trace["fault_sequence"]
 

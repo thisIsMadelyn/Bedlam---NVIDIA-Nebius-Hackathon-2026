@@ -5,11 +5,12 @@ route to a specialist -> synthesise candidates -> select one fault under
 blast-radius and history constraints -> inject it -> probe and classify ->
 wait for the patch -> remove the fault -> analyse the patch.
 
-Two cycles, then the escalation hand-off (Phase 4). Faults are strictly
-sequential: one fault, one layer, removed before the next cycle selects.
-Probes run concurrently; they are read-only.
+Two cycles, then the trade-off escalation: Bedlam presents two options and
+the developer chooses; the cost of the chosen one is then shown live, once.
+Faults are strictly sequential: one fault, one layer, removed before the
+next one. Probes run concurrently; they are read-only.
 
-Run: python -m bedlam.loop --headless
+Run: python -m bedlam.loop --headless [--choice a|b]
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from dotenv import load_dotenv
 
 from bedlam import seed as seeding
 from bedlam.diff import DiffAnalysis, analyse
+from bedlam.escalation import KEYS, ChoiceSource, ScriptedChoice, decision_record, escalate
 from bedlam.faults.toxiproxy import ToxiproxyClient
 from bedlam.history import FaultRecord
 from bedlam.logging import get_logger, log_event
@@ -74,6 +76,9 @@ class LoopDeps:
     manifest: tuple[Dependency, ...]
     root_seed: int
     on_event: EventSink = field(default=_no_events)
+    # The developer's side of the trade-off. None: present it and stop
+    # there -- Bedlam never fills in a choice it was not given.
+    choices: ChoiceSource | None = None
 
 
 async def run(deps: LoopDeps, trace: Trace) -> Trace:
@@ -103,6 +108,8 @@ async def run(deps: LoopDeps, trace: Trace) -> Trace:
     symptom: Symptom | None = None
     analysis: DiffAnalysis | None = None
     previous_queries: list[str] = []
+    analyses: list[DiffAnalysis] = []
+    symptoms: list[Symptom] = []
 
     for cycle in range(1, MAX_CYCLES + 1):
         deps.models.set_cycle(cycle)
@@ -209,21 +216,72 @@ async def run(deps: LoopDeps, trace: Trace) -> Trace:
         fault_record = FaultRecord(cycle, option.id, option.layer, option.kind, specialist.name)
         analysis = await analyse(deps.models, diff=patch.diff, fault=fault_record, symptom=symptom)
         record["diff_analysis"] = analysis.to_dict()
+        analyses.append(analysis)
+        symptoms.append(symptom)
         emit("analysed", {"cycle": cycle, "analysis": record["diff_analysis"]})
         history.append(fault_record)
         log_event(_LOG, "cycle finished", cycle=cycle, fault=option.id, symptom=symptom.kind.value)
 
     deps.models.set_cycle(None)
-    # Phase 4 builds the escalation itself. This is the hand-off point, and
-    # it carries the inputs the escalation will reason over.
-    trace.escalation = {
-        "status": "pending_phase_4",
-        "faults": [r.to_dict() for r in history],
-        "last_patch": analysis.to_dict() if analysis else None,
-    }
+    await _escalate(deps, trace, history, analyses, symptoms)
     trace.outcome = "completed"
-    emit("escalation_pending", {"escalation": trace.escalation})
+    emit("finished", {"escalation": trace.escalation})
     return trace
+
+
+async def _escalate(
+    deps: LoopDeps,
+    trace: Trace,
+    history: list[FaultRecord],
+    analyses: list[DiffAnalysis],
+    symptoms: list[Symptom],
+) -> None:
+    """Present the trade-off, take the developer's choice, show its cost once."""
+    emit = deps.on_event
+    emit("escalating", {})
+    trade_off = await escalate(deps.models, history=history, analyses=analyses, symptoms=symptoms)
+    escalation: dict[str, Any] = {
+        "status": "awaiting_choice",
+        "faults": [r.to_dict() for r in history],
+        "trade_off": trade_off.to_dict(),
+    }
+    trace.escalation = escalation
+    log_event(_LOG, "trade-off presented", axis=trade_off.axis, source=trade_off.source)
+    emit("trade_off", {"trade_off": escalation["trade_off"]})
+    if deps.choices is None:
+        escalation["status"] = "no_choice_given"
+        return
+
+    key = await deps.choices.wait_for_choice(trade_off)
+    chosen = trade_off.option(key)
+    escalation.update(status="chosen", choice=key)
+    log_event(_LOG, "trade-off chosen", choice=key, title=chosen.title)
+    emit("chosen", {"choice": key, "option": chosen.to_dict()})
+
+    # The cost, live: the chosen option's consequence, applied once.
+    consequence = chosen.consequence
+    fault = consequence.build()
+    shown: dict[str, Any] = {"fault": consequence.id}
+    escalation["consequence"] = shown
+    emit(
+        "showing_cost",
+        {
+            "fault": consequence.id,
+            "layer": consequence.layer.value,
+            "kind": consequence.kind.value,
+            "blast_radius": sorted(layer.value for layer in consequence.blast_radius),
+        },
+    )
+    try:
+        await fault.apply(deps.faults)
+        emit("probing", {"cycle": None})
+        shown["probe_during"] = snapshot_to_dict(await deps.probe())
+        emit("cost_shown", {"snapshot": shown["probe_during"]})
+    finally:
+        await fault.remove(deps.faults)
+    emit("probing", {"cycle": None})
+    shown["probe_after"] = snapshot_to_dict(await deps.probe())
+    emit("cost_removed", {"snapshot": shown["probe_after"]})
 
 
 async def execute(
@@ -233,11 +291,14 @@ async def execute(
     record_path: Path | None = None,
     on_event: EventSink = _no_events,
     on_clients: Callable[[ModelClient, SearchClient], None] | None = None,
+    choices: ChoiceSource | None = None,
 ) -> int:
     """One live run against the local stack. Returns the process exit code.
 
     `on_clients` hands the live model and search clients to an observer (the
-    TUI reads their call logs); `on_event` receives each loop step.
+    TUI reads their call logs); `on_event` receives each loop step;
+    `choices` is the developer's side of the trade-off. A run that reaches a
+    choice also writes it as a decision record next to the trace.
     """
     transport = OpenAITransport()
     models = ModelClient(transport, root_seed=root_seed)
@@ -265,6 +326,7 @@ async def execute(
                 manifest=manifest,
                 root_seed=root_seed,
                 on_event=on_event,
+                choices=choices,
             )
             await run(deps, trace)
     except Exception as exc:
@@ -273,6 +335,10 @@ async def execute(
         _LOG.exception("run failed")
     finally:
         trace.write(trace_path, models, search)
+        if trace.escalation and "choice" in trace.escalation:
+            decision_path(trace_path).write_text(
+                decision_record(trace.escalation), encoding="utf-8"
+            )
         if recording is not None and record_path is not None:
             recording.fault_sequence = trace.to_dict(models, search)["fault_sequence"]
             recording.write(record_path)
@@ -289,6 +355,11 @@ async def execute(
     return 0 if trace.outcome == "completed" else 1
 
 
+def decision_path(trace_path: Path) -> Path:
+    """Where a run's decision record goes: beside its trace."""
+    return trace_path.with_suffix(".decision.md")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="bedlam.loop", description=__doc__.splitlines()[0])
     parser.add_argument("--headless", action="store_true", help="run the loop without a UI")
@@ -297,6 +368,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--trace", type=Path, default=None, help="trace output path")
     parser.add_argument(
         "--record", type=Path, default=None, help="also write a replay recording to this path"
+    )
+    parser.add_argument(
+        "--choice",
+        choices=KEYS,
+        default=None,
+        help="your side of the trade-off; without it the run presents the options and stops",
     )
     args = parser.parse_args(argv)
 
@@ -308,7 +385,8 @@ def main(argv: list[str] | None = None) -> int:
     os.environ[seeding.ROOT_SEED_ENV] = str(root_seed)
     trace_path = args.trace or _REPO_ROOT / "traces" / f"headless-seed{root_seed}.json"
     patches = ScriptedPatchSource(args.patches)
-    return asyncio.run(execute(root_seed, patches, trace_path, args.record))
+    choices = ScriptedChoice(args.choice) if args.choice else None
+    return asyncio.run(execute(root_seed, patches, trace_path, args.record, choices=choices))
 
 
 if __name__ == "__main__":

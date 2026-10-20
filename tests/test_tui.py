@@ -45,6 +45,7 @@ def _app() -> BedlamApp:
             manifest=manifest,
             root_seed=1729,
             on_event=app.on_loop_event,
+            choices=app.choices,
         )
         trace = await run(deps, Trace(root_seed=1729, manifest=manifest))
         return 0 if trace.outcome == "completed" else 1
@@ -60,6 +61,8 @@ async def _drive(app: BedlamApp, pilot, screenshot: Path | None = None) -> None:
         if app.patches.waiting:
             await pilot.press("p")
             patches_sent += 1
+        if app.choices.waiting:
+            await pilot.press("a")
         await asyncio.sleep(0.01)
     await pilot.pause(0.3)
     assert patches_sent == MAX_CYCLES

@@ -12,6 +12,7 @@ from textual.widgets import Static
 from bedlam.faults.primitives import FaultKind
 from bedlam.guide import (
     APP,
+    EARLY_CHOICE,
     EARLY_PRESS,
     LOG,
     MODELS,
@@ -20,6 +21,7 @@ from bedlam.guide import (
     PRESSED_SCRIPTED,
     STARTING,
     STOPPED,
+    TRADE_OFF,
     YOUR_TURN_REAL,
     YOUR_TURN_SCRIPTED,
     guidance,
@@ -38,8 +40,10 @@ def _all_guidance(tmp_path: Path) -> list:
         found.append(guidance("injecting", fields))
     found.append(guidance("selected", {"selection": {"fault": {"id": longest_fault.id}}}))
     fixed = [STARTING, STOPPED, PRESSED_REAL, PRESSED_SCRIPTED, NO_CHANGES]
-    turns = [YOUR_TURN_REAL, YOUR_TURN_SCRIPTED]
-    return [*found, *fixed, *turns, STARTING.nudged(EARLY_PRESS)]
+    turns = [YOUR_TURN_REAL, YOUR_TURN_SCRIPTED, TRADE_OFF]
+    longest_title = {"choice": "a", "option": {"title": "x" * 48}}
+    found += [guidance("chosen", longest_title), guidance("finished", {"escalation": None})]
+    return [*found, *fixed, *turns, STARTING.nudged(EARLY_PRESS), STARTING.nudged(EARLY_CHOICE)]
 
 
 def test_every_guide_line_fits_and_points_somewhere(tmp_path: Path) -> None:

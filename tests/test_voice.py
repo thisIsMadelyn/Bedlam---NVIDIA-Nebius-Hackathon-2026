@@ -17,7 +17,8 @@ from bedlam.voice import LINES, QUOTES, Voice
 EVENTS = {
     "probing", "baseline", "cycle_started", "searching", "routed", "selected", "injecting",
     "probed", "symptom", "awaiting_patch", "patched", "fault_removed", "analysed",
-    "escalation_pending",
+    "escalating", "trade_off", "chosen", "showing_cost", "cost_shown", "cost_removed",
+    "finished",
 }  # fmt: skip
 
 
@@ -68,7 +69,7 @@ def test_each_quote_plays_the_first_time_its_moment_comes_up() -> None:
         "symptom:stalled": {"symptom": {"kind": "stalled", "layer": "db"}},
         "awaiting_patch": {},
         "analysed": {},
-        "escalation_pending": {},
+        "trade_off": {},
     }
     assert fields.keys() == QUOTES.keys()
     for seed in (1729, 7):
