@@ -34,12 +34,14 @@ from typing import Any, Final
 
 from dotenv import load_dotenv
 from rich.text import Text
+from textual import events
 from textual.app import App, ComposeResult
-from textual.containers import Vertical
+from textual.containers import Horizontal, Vertical
 from textual.css.query import NoMatches
 from textual.widget import Widget
 from textual.widgets import Input, RichLog, Static
 
+from bedlam import jester
 from bedlam import seed as seeding
 from bedlam.escalation import KEYS, TradeOff
 from bedlam.guide import (
@@ -74,7 +76,7 @@ from bedlam.search.tavily import SearchCall, SearchClient
 from bedlam.stats import ContainerStats, StatsUnavailable
 from bedlam.stats import sample as sample_stats
 from bedlam.topology import Layer
-from bedlam.voice import Voice
+from bedlam.voice import Voice, event_key
 
 # The minimum width. Every template is checked to fit at this size.
 WIDTH: Final = 82
@@ -84,6 +86,10 @@ LINE: Final = WIDTH - 6
 SAY: Final = LINE - 3
 # Side by side only when each half is still at least the minimum width.
 _WIDE: Final = 2 * WIDTH + 2
+# The jester beside the NOW box: its cells plus a column either side. Shown
+# only when the NOW box keeps its full width at 82, so it never cuts a line.
+_JESTER: Final = jester.WIDTH + 2
+_ROOMY: Final = WIDTH + _JESTER
 
 # Palette. The four given colours, plus shades of them for the background
 # and text, and one red that marks damage only.
@@ -96,6 +102,12 @@ _BACKGROUND: Final = "#1C1A24"
 _SURFACE: Final = "#23212D"
 _TEXT: Final = "#E6E4EF"
 _SOFT: Final = "#A29FB2"
+_JESTER_COLOURS: Final = {
+    "accent": ACCENT, "ink": INK, "muted": MUTED, "go": GO, "soft": _SOFT, "text": _TEXT,
+}  # fmt: skip
+_SPLASH_COLOURS: Final = {**_JESTER_COLOURS, "background": _BACKGROUND}
+# How long the launch splash holds before the run starts. Any key skips it.
+SPLASH_S: Final = 2.5
 
 _BAR_MIN: Final = 20
 _SPARK: Final = "▁▂▃▄▅▆▇█"
@@ -229,13 +241,17 @@ COMMANDS: Final = {
 
 
 class BedlamApp(App[int]):
-    HORIZONTAL_BREAKPOINTS = [(0, "-narrow"), (_WIDE, "-wide")]
+    HORIZONTAL_BREAKPOINTS = [(0, "-narrow"), (_ROOMY, "-roomy"), (_WIDE, "-wide")]
     CSS = f"""
     Screen {{ background: {_BACKGROUND}; color: {_TEXT}; }}
     #frame {{ width: 100%; min-width: {WIDTH}; height: 100%; }}
     #header {{ height: 1; background: {INK}; color: {_TEXT}; }}
+    #splash {{ display: none; width: 100%; height: 100%; content-align: center middle; }}
+    #top {{ height: 5; }}
+    #jester {{ display: none; width: {_JESTER}; height: 5; padding: 1 1; }}
+    Screen.-roomy #jester, Screen.-wide #jester {{ display: block; }}
     #now {{
-        height: 5; border: round {ACCENT}; padding: 0 1; background: {_SURFACE};
+        width: 1fr; height: 5; border: round {ACCENT}; padding: 0 1; background: {_SURFACE};
         border-title-color: {ACCENT}; border-title-style: bold;
     }}
     #now.your-turn {{
@@ -288,8 +304,11 @@ class BedlamApp(App[int]):
         *,
         real: bool = False,
         stats: StatsSource | None = None,
+        splash_s: float = 0.0,
     ) -> None:
         super().__init__()
+        # The jester and the wordmark before the run starts; 0 skips it.
+        self.splash_s = splash_s
         self.root_seed = root_seed
         # Real patch mode: the developer writes the fix and P reads git diff.
         self.real = real
@@ -304,6 +323,7 @@ class BedlamApp(App[int]):
         self._cycle = 0
         self.now: Guidance = STARTING
         self._said: tuple[str, bool] | None = None
+        self.mood = jester.Mood.IDLE
         self._blast: list[str] = []
         self._fault: str | None = None
         self._health: dict[str, dict[str, Any]] = {}
@@ -330,11 +350,14 @@ class BedlamApp(App[int]):
         self.exit_code: int | None = None
 
     def compose(self) -> ComposeResult:
+        yield Splash(id="splash")
         with Vertical(id="frame"):
             yield Static(id="header")
-            now = Static(id="now")
-            now.border_title = "NOW"
-            yield now
+            with Horizontal(id="top"):
+                now = Static(id="now")
+                now.border_title = "NOW"
+                yield now
+                yield Static(id="jester")
             yield Static(id="says")
             tradeoff = Static(id="tradeoff", classes="panel")
             tradeoff.border_title = "TRADE-OFF · you choose, Bedlam does not"
@@ -359,6 +382,31 @@ class BedlamApp(App[int]):
     def on_mount(self) -> None:
         self._render_chrome()
         self.set_interval(0.05, self._tick)
+        if self.splash_s <= 0:
+            self._start()
+            return
+        splash = self.query_one("#splash", Splash)
+        splash.update(jester.splash(_SPLASH_COLOURS))
+        splash.display = True
+        self.query_one("#frame").display = False
+        splash.focus()
+        self.set_timer(self.splash_s, self.end_splash)
+
+    @property
+    def splashing(self) -> bool:
+        return self.query_one("#splash").display
+
+    def end_splash(self) -> None:
+        """Swap the splash for the frame and start the run. Runs once."""
+        if not self.splashing:
+            return
+        self.query_one("#splash").display = False
+        self.query_one("#frame").display = True
+        self.query_one("#timeline", RichLog).focus()
+        self.call_after_refresh(self._render_chrome)
+        self._start()
+
+    def _start(self) -> None:
         self.run_worker(self._run(), exclusive=True)
         if self._stats is not None:
             self.run_worker(self._poll_stats(), group="stats")
@@ -452,6 +500,7 @@ class BedlamApp(App[int]):
         handler = getattr(self, f"_on_{kind}", None)
         if handler is not None:
             handler(fields)
+        self.mood = jester.mood_for(event_key(kind, fields), self.mood)
         line = self._voice.say(kind, fields)
         if line:
             quoted = self._voice.quoted
@@ -663,6 +712,7 @@ class BedlamApp(App[int]):
             style = "bold" if i == 0 else f"bold {GO}" if last and now.your_turn else _SOFT
             body.append(fit(line, _inner(box)) + ("" if last else "\n"), style=style)
         box.update(body)
+        self.query_one("#jester", Static).update(jester.render(self.mood, _JESTER_COLOURS))
 
         says = Text.assemble((_SAYS, f"bold {_BACKGROUND} on {ACCENT}"))
         if self._said is not None:
@@ -841,6 +891,15 @@ class BedlamApp(App[int]):
         return line
 
 
+class Splash(Static, can_focus=True):
+    """The launch splash. It holds focus, so any key skips it, and only that."""
+
+    def on_key(self, event: events.Key) -> None:
+        event.stop()
+        event.prevent_default()
+        self.app.end_splash()  # type: ignore[attr-defined]
+
+
 def _inner(widget: Widget) -> int:
     """Columns a line may use inside `widget`, never less than at 82 wide."""
     if isinstance(widget, RichLog):
@@ -973,7 +1032,9 @@ def main(argv: list[str] | None = None) -> int:
             choices=app.choices,
         )
 
-    app = BedlamApp(root_seed, patches, launch, real=not args.scripted, stats=sample_stats)
+    app = BedlamApp(
+        root_seed, patches, launch, real=not args.scripted, stats=sample_stats, splash_s=SPLASH_S
+    )
     app.decision_file = decision_path(trace_path)
     app.run()
     return app.exit_code if app.exit_code is not None else 1

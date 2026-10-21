@@ -16,6 +16,7 @@ from fakes import (
 )
 from textual.widgets import RichLog, Static
 
+from bedlam.guide import EARLY_PRESS
 from bedlam.loop import MAX_CYCLES, LoopDeps, run
 from bedlam.models.client import ModelClient
 from bedlam.patches import ScriptedPatchSource
@@ -161,6 +162,34 @@ def test_bedlam_says_holds_the_latest_line_and_marks_quotes() -> None:
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize("width", [WIDTH, WIDTH + 10, 200], ids=["82 minimum", "92", "wide"])
+def test_the_jester_shows_only_where_the_now_box_keeps_its_width(width: int) -> None:
+    async def scenario() -> None:
+        app = BedlamApp(1729, ScriptedPatchSource(), lambda app: asyncio.sleep(3600))
+        async with app.run_test(size=(width, 30)) as pilot:
+            app.on_loop_event(
+                "injecting",
+                {
+                    "cycle": 1,
+                    "fault": "db.timeout.0",
+                    "layer": "db",
+                    "kind": "timeout",
+                    "blast_radius": ["db"],
+                },
+            )
+            await pilot.pause(0.1)
+            jester = app.query_one("#jester", Static)
+            now = app.query_one("#now", Static)
+            assert app.mood == "striking"
+            assert now.content_region.width >= WIDTH - 4, "the NOW box lost columns"
+            assert jester.display == (width >= WIDTH + 11)
+            if jester.display:
+                assert "(ò▿ó)" in str(jester.render()).split("\n")[2]
+                assert jester.region.x >= now.region.right
+
+    asyncio.run(scenario())
+
+
 def test_bedlam_says_text_is_never_drawn_on_its_own_colour() -> None:
     async def scenario() -> None:
         app = BedlamApp(1729, ScriptedPatchSource(), lambda app: asyncio.sleep(3600))
@@ -174,5 +203,49 @@ def test_bedlam_says_text_is_never_drawn_on_its_own_colour() -> None:
             for segment in spoken:
                 assert segment.style.color != segment.style.bgcolor, repr(segment.text)
                 assert segment.style.bgcolor.name.lower() != ACCENT.lower(), "label bg leaked"
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("size", [SIZE, WIDE], ids=["82 minimum", "wide"])
+def test_the_splash_is_centred_and_holds_the_run_until_it_ends(size) -> None:
+    started: list[bool] = []
+
+    async def launch(app: BedlamApp) -> int:
+        started.append(True)
+        await asyncio.sleep(3600)
+        return 0
+
+    async def scenario() -> None:
+        app = BedlamApp(1729, ScriptedPatchSource(), launch, splash_s=0.3)
+        async with app.run_test(size=size) as pilot:
+            await pilot.pause(0.1)
+            assert app.splashing and not started
+            assert not app.query_one("#frame").display
+            rows = [s.text for s in app.screen._compositor.render_strips()]
+            art = [i for i, row in enumerate(rows) if row.strip()]
+            top, bottom = art[0], art[-1]
+            assert abs(top - (size[1] - 1 - bottom)) <= 1, "not centred top to bottom"
+            left = min(len(row) - len(row.lstrip()) for row in rows if row.strip())
+            right = min(len(row) - len(row.rstrip()) for row in rows if row.strip())
+            assert abs(left - right) <= 1, "not centred left to right"
+            assert "▀▀  ▀▀▀ ▀▀  ▀▀▀" in rows[bottom]
+            await pilot.pause(0.4)
+            assert not app.splashing and started
+            assert app.query_one("#frame").display
+
+    asyncio.run(scenario())
+
+
+def test_any_key_skips_the_splash_and_does_nothing_else() -> None:
+    async def scenario() -> None:
+        app = BedlamApp(1729, ScriptedPatchSource(), lambda app: asyncio.sleep(3600), splash_s=60)
+        async with app.run_test(size=SIZE) as pilot:
+            await pilot.pause(0.1)
+            assert app.splashing
+            await pilot.press("p")
+            await pilot.pause(0.1)
+            assert not app.splashing
+            assert app.now.lines[-1] != EARLY_PRESS, "p reached the app"
 
     asyncio.run(scenario())

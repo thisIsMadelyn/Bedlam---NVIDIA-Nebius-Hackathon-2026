@@ -150,6 +150,12 @@ def _refine(kind: str, fields: dict[str, Any]) -> tuple[str | None, dict[str, An
     return None, {}
 
 
+def event_key(kind: str, fields: dict[str, Any]) -> str:
+    """The most specific key for this event (`symptom:stalled`), lines or not."""
+    refinement, _ = _refine(kind, fields)
+    return f"{kind}:{refinement}" if refinement else kind
+
+
 class Voice:
     """Says one line per event, never the same line twice in a run."""
 
@@ -160,8 +166,8 @@ class Voice:
         self.quoted = False
 
     def say(self, kind: str, fields: dict[str, Any]) -> str | None:
-        refinement, values = _refine(kind, fields)
-        key = f"{kind}:{refinement}" if refinement else kind
+        _, values = _refine(kind, fields)
+        key = event_key(kind, fields)
         if key not in LINES:
             key = kind
         quote = QUOTES.get(key)
