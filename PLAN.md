@@ -208,6 +208,14 @@ Done when:
 **Feature freeze at end of day.** Anything not working by Monday night does not ship.
 
 Artifacts:
+- Live patch (scheduled 21 Oct, see "Council review decisions"): the target's
+  source is bind-mounted into the api container, which reloads on change.
+  After the patch, the same fault is probed again and the screen says whether
+  the patch held, before the fault is removed. Scripted patches are applied to
+  the submodule for the cycle and reverted at the end of the run
+- Tavily routing on screen (scheduled 21 Oct): one beat per cycle with the
+  results, Nano's layer labels, the summed scores and the winning specialist;
+  layout approved before it is built
 - Scripted patches for the demo, applied as real commits so the diff analysis is live
 - Three consecutive clean end-to-end runs from a fresh `docker compose up`
 - Determinism verified by replay: re-record the final demo run with `make record`,
@@ -392,3 +400,25 @@ with ASCII (bars, sparklines) so it stays inside 82 columns. Candidates:
 Overlaps with the Phase 3 AGENT panel, so it may fit there. Container stats
 landed 20 Oct (`f874fae`): CPU with a sparkline and memory per layer, read from
 the `docker` CLI, so no new dependency. Display only.
+
+### Council review decisions
+
+Recorded 21 Oct after an outside review. Each item is scheduled into its
+phase before work starts.
+
+- **The patch must run.** Today the developer's edit is read but never
+  reaches the running container, so the re-break never tests the fix.
+  Make the edit live in the api container, then re-apply the same fault
+  to show whether the patch held, before pivoting to the gap. Accepted
+  cost: testing the app gets slower (re-record and replay after it lands).
+  Landed 21 Oct; what changed, the cycle and the held rule are in
+  `docs/live-patch.md`.
+- **Tavily routing is shown on screen.** One visible beat per cycle: the
+  live results, Nano's layer label on each, the summed scores and the
+  winning specialist.
+- **Judges run the scripted patches only.** Judges are not expected to run
+  the build locally or read the code; the judge-facing run uses
+  `demo/patches/` so nobody has to patch an unfamiliar codebase. Real
+  patch mode stays for the builder, and may be used for the video.
+- **Video length is not a risk.** The loop finishes in seconds; 3:00 is
+  ample.

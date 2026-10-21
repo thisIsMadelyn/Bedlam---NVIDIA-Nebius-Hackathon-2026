@@ -3,7 +3,9 @@
 Per cycle: formulate queries -> live search -> label results by layer ->
 route to a specialist -> synthesise candidates -> select one fault under
 blast-radius and history constraints -> inject it -> probe and classify ->
-wait for the patch -> remove the fault -> analyse the patch.
+wait for the patch -> remove the fault -> restart the api with the patch ->
+inject the same fault again and read through the app to see whether the
+patch held -> remove it -> analyse the patch.
 
 Two cycles, then the trade-off escalation: Bedlam presents two options and
 the developer chooses; the cost of the chosen one is then shown live, once.
@@ -32,17 +34,31 @@ from bedlam.faults.toxiproxy import ToxiproxyClient
 from bedlam.history import FaultRecord
 from bedlam.logging import get_logger, log_event
 from bedlam.models.client import ModelCallError, ModelClient, OpenAITransport
-from bedlam.patches import DEFAULT_PATCH_DIR, PatchSource, ScriptedPatchSource
+from bedlam.patches import (
+    DEFAULT_PATCH_DIR,
+    DEFAULT_TARGET,
+    PatchSource,
+    ScriptedPatchSource,
+    deploy,
+)
 from bedlam.probes import HealthStatus, ProbeResult, snapshot
+from bedlam.probes.app import AppProbe, AppResult, held
 from bedlam.probes.classify import Symptom
 from bedlam.probes.classify import classify as classify_probe
-from bedlam.replay import Recording, RecordingSearchBackend, RecordingTransport, recording_probe
+from bedlam.replay import (
+    Recording,
+    RecordingSearchBackend,
+    RecordingTransport,
+    recording_app_probe,
+    recording_probe,
+)
 from bedlam.router import classify_results, route
 from bedlam.search.manifest import Dependency, load_manifest
 from bedlam.search.query import formulate
 from bedlam.search.tavily import SearchBackend, SearchClient, TavilyBackend, merge
 from bedlam.select import select_fault
 from bedlam.specialists import SPECIALISTS, Candidate
+from bedlam.specialists.catalog import FaultOption
 from bedlam.topology import TOPOLOGY, Layer
 from bedlam.trace import Trace, snapshot_to_dict
 
@@ -79,6 +95,10 @@ class LoopDeps:
     # The developer's side of the trade-off. None: present it and stop
     # there -- Bedlam never fills in a choice it was not given.
     choices: ChoiceSource | None = None
+    # The read through the app that judges each patch, and the restart that
+    # puts the patch in the api. None: the patch is analysed but not checked.
+    app_probe: Callable[[], Awaitable[AppResult]] | None = None
+    deploy: Callable[[], Awaitable[None]] | None = None
 
 
 async def run(deps: LoopDeps, trace: Trace) -> Trace:
@@ -103,6 +123,13 @@ async def run(deps: LoopDeps, trace: Trace) -> Trace:
     down = sorted(layer.value for layer, r in baseline.items() if r.status is not HealthStatus.UP)
     if down:
         raise StackUnhealthyError(f"layers down before any fault: {down}. Run `make up`.")
+    if deps.app_probe is not None:
+        app_baseline = await deps.app_probe()
+        trace.app_baseline = app_baseline.to_dict()
+        if not app_baseline.ok:
+            raise StackUnhealthyError(
+                f"the read through the app failed before any fault: {app_baseline.error}"
+            )
 
     history: list[FaultRecord] = []
     symptom: Symptom | None = None
@@ -196,13 +223,19 @@ async def run(deps: LoopDeps, trace: Trace) -> Trace:
                 "blast_radius": record["blast_radius"],
             },
         )
+        app_before: AppResult | None = None
         try:
             # Inside the try: a create that lands on the server but times out
             # on the client must still be removed. Removing a toxic that was
             # never created is a 404, which delete_toxic treats as done.
             await fault.apply(deps.faults)
             emit("probing", {"cycle": cycle})
-            during = await deps.probe()
+            if deps.app_probe is None:
+                during = await deps.probe()
+            else:
+                # Read-only, so concurrent with the layer probes.
+                during, app_before = await asyncio.gather(deps.probe(), deps.app_probe())
+                record["app_under_fault"] = app_before.to_dict()
             record["probe_during_fault"] = snapshot_to_dict(during)
             emit("probed", {"cycle": cycle, "snapshot": record["probe_during_fault"]})
             symptom = await classify_probe(deps.models, during)
@@ -214,6 +247,8 @@ async def run(deps: LoopDeps, trace: Trace) -> Trace:
             emit("patched", {"cycle": cycle, "patch": record["patch"]})
         finally:
             await fault.remove(deps.faults)
+        if app_before is not None:
+            await _check_patch(deps, cycle, record, option, app_before)
         emit("probing", {"cycle": cycle})
         record["probe_after_removal"] = snapshot_to_dict(await deps.probe())
         emit("fault_removed", {"cycle": cycle, "snapshot": record["probe_after_removal"]})
@@ -233,6 +268,41 @@ async def run(deps: LoopDeps, trace: Trace) -> Trace:
     trace.outcome = "completed"
     emit("finished", {"escalation": trace.escalation})
     return trace
+
+
+async def _check_patch(
+    deps: LoopDeps, cycle: int, record: dict[str, Any], option: FaultOption, before: AppResult
+) -> None:
+    """Same fault, patched app: read through it again and judge the patch.
+
+    The fault is already removed: the api restarts with the patch on a
+    healthy stack, then the same fault goes back in, alone, for one read.
+    """
+    assert deps.app_probe is not None
+    emit = deps.on_event
+    emit("deploying", {"cycle": cycle})
+    if deps.deploy is not None:
+        await deps.deploy()
+    fault = option.build()
+    emit(
+        "retesting",
+        {
+            "cycle": cycle,
+            "fault": option.id,
+            "layer": option.layer.value,
+            "blast_radius": record["blast_radius"],
+        },
+    )
+    try:
+        await fault.apply(deps.faults)
+        emit("probing", {"cycle": cycle})
+        after = await deps.app_probe()
+    finally:
+        await fault.remove(deps.faults)
+    check = {"before": before.to_dict(), "after": after.to_dict(), "held": held(before, after)}
+    record["patch_check"] = check
+    log_event(_LOG, "patch checked", cycle=cycle, held=check["held"])
+    emit("patch_checked", {"cycle": cycle, "check": check})
 
 
 async def _escalate(
@@ -310,12 +380,14 @@ async def execute(
     models = ModelClient(transport, root_seed=root_seed)
     backend: SearchBackend = TavilyBackend()
     probe: Callable[[], Awaitable[dict[Layer, ProbeResult]]] = snapshot
+    app_probe: Callable[[], Awaitable[AppResult]] = AppProbe()
     # Recording wraps the live calls; it never replaces them.
     recording = Recording(root_seed=root_seed) if record_path else None
     if recording is not None:
         models = ModelClient(RecordingTransport(transport, recording), root_seed=root_seed)
         backend = RecordingSearchBackend(backend, recording)
         probe = recording_probe(snapshot, recording)
+        app_probe = recording_app_probe(app_probe, recording)
     search = SearchClient(backend)
     if on_clients is not None:
         on_clients(models, search)
@@ -333,6 +405,8 @@ async def execute(
                 root_seed=root_seed,
                 on_event=on_event,
                 choices=choices,
+                app_probe=app_probe,
+                deploy=deploy,
             )
             await run(deps, trace)
     except Exception as exc:
@@ -390,9 +464,11 @@ def main(argv: list[str] | None = None) -> int:
     root_seed = args.seed if args.seed is not None else seeding.root_seed()
     os.environ[seeding.ROOT_SEED_ENV] = str(root_seed)
     trace_path = args.trace or _REPO_ROOT / "traces" / f"headless-seed{root_seed}.json"
-    patches = ScriptedPatchSource(args.patches)
     choices = ScriptedChoice(args.choice) if args.choice else None
-    return asyncio.run(execute(root_seed, patches, trace_path, args.record, choices=choices))
+    # The prepared diffs are applied to the target for the run, so the api
+    # runs them, and reverted when it ends.
+    with ScriptedPatchSource(args.patches, target=DEFAULT_TARGET) as patches:
+        return asyncio.run(execute(root_seed, patches, trace_path, args.record, choices=choices))
 
 
 if __name__ == "__main__":

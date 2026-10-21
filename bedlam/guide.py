@@ -199,6 +199,37 @@ def guidance(kind: str, fields: dict[str, Any], *, real: bool = False) -> Guidan
         )
     if kind == "awaiting_patch":
         return YOUR_TURN_REAL if real else YOUR_TURN_SCRIPTED
+    if kind == "deploying":
+        return Guidance(
+            6,
+            "TESTING YOUR FIX",
+            (
+                "Bedlam lifts the attack and restarts your app with your fix.",
+                f"Look at {LOG}: the same attack comes back next.",
+                _NOTHING,
+            ),
+        )
+    if kind == "retesting":
+        return Guidance(
+            6,
+            "TESTING YOUR FIX",
+            (
+                "The same attack again, against your fixed app.",
+                f"Look at {LOG}: 'through the app' shows before and after.",
+                _NOTHING,
+            ),
+        )
+    if kind == "patch_checked":
+        verdict = "held" if fields["check"]["held"] else "did not hold"
+        return Guidance(
+            6,
+            "TESTING YOUR FIX",
+            (
+                f"Same attack, fixed app: your fix {verdict}.",
+                f"Look at {LOG}: before and after, through the app.",
+                _NOTHING,
+            ),
+        )
     if kind == "fault_removed":
         return Guidance(
             6,

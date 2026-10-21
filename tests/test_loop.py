@@ -10,6 +10,7 @@ from fakes import (
     FakeSearchBackend,
     FakeToxiproxy,
     FakeTransport,
+    app_probe_for,
     default_search_results,
     plausible_model,
     probe_for,
@@ -154,6 +155,7 @@ def test_failure_mid_cycle_still_writes_a_failed_trace(tmp_path: Path, monkeypat
     monkeypatch.setattr(loop, "TavilyBackend", _FailingSearchBackend)
     monkeypatch.setattr(loop, "ToxiproxyClient", lambda: toxiproxy)
     monkeypatch.setattr(loop, "snapshot", probe_for(toxiproxy))
+    monkeypatch.setattr(loop, "AppProbe", lambda: app_probe_for(toxiproxy))
     trace_path = tmp_path / "trace.json"
 
     code = asyncio.run(loop.execute(1729, ScriptedPatchSource(), trace_path))
@@ -165,3 +167,75 @@ def test_failure_mid_cycle_still_writes_a_failed_trace(tmp_path: Path, monkeypat
     assert len(trace["cycles"]) == 1, "the partial cycle belongs in the trace"
     assert trace["fault_sequence"] == []
     assert transport.closed
+
+
+def _run_with_app_probe(
+    tmp_path: Path, *, patch_works: bool, toxiproxy: FakeToxiproxy | None = None
+) -> tuple[dict, list[str]]:
+    toxiproxy = toxiproxy or FakeToxiproxy()
+    seen: list[str] = []
+    patched = {"in": False}
+
+    def on_event(kind: str, fields: dict) -> None:
+        seen.append(kind)
+        if kind == "deploying":
+            patched["in"] = patch_works
+        if kind == "fault_removed":
+            patched["in"] = False
+
+    async def deploy() -> None:
+        seen.append("deployed")
+
+    models = ModelClient(FakeTransport(plausible_model()), root_seed=1729, backoff_s=0.0)
+    search = SearchClient(FakeSearchBackend(default_search_results()))
+    manifest = load_manifest()
+    deps = LoopDeps(
+        models=models,
+        search=search,
+        faults=toxiproxy,  # type: ignore[arg-type]
+        probe=probe_for(toxiproxy),
+        patches=ScriptedPatchSource(),
+        manifest=manifest,
+        root_seed=1729,
+        on_event=on_event,
+        app_probe=app_probe_for(toxiproxy, patched=lambda: patched["in"]),
+        deploy=deploy,
+    )
+    trace = asyncio.run(run(deps, Trace(root_seed=1729, manifest=manifest)))
+    trace.write(tmp_path / "trace.json", models, search)
+    return json.loads((tmp_path / "trace.json").read_text(encoding="utf-8")), seen
+
+
+def test_the_patch_is_deployed_then_checked_under_the_same_fault(tmp_path: Path) -> None:
+    trace, seen = _run_with_app_probe(tmp_path, patch_works=True)
+
+    assert trace["app_baseline"]["ok"] is True
+    for cycle in trace["cycles"]:
+        check = cycle["patch_check"]
+        assert check["before"]["latency_ms"] == 6001.0, "read under the fault, before the patch"
+        assert check["after"]["status_code"] == 503, "read under the same fault, patched"
+        assert check["held"] is True
+    steps = seen[seen.index("patched") :]
+    order = ["deploying", "deployed", "retesting", "patch_checked", "fault_removed"]
+    assert [steps.index(step) for step in order] == sorted(steps.index(step) for step in order)
+
+
+def test_the_retest_injects_the_same_fault_alone(tmp_path: Path) -> None:
+    toxiproxy = FakeToxiproxy()  # fails loudly if two toxics are ever live
+    _run_with_app_probe(tmp_path, patch_works=True, toxiproxy=toxiproxy)
+
+    first, retest, second, retest2 = toxiproxy.applied  # no choice given: no cost
+    assert first == retest and second == retest2, "each round's fault goes in twice, in a row"
+
+
+def test_a_patch_that_changes_nothing_did_not_hold(tmp_path: Path) -> None:
+    trace, _ = _run_with_app_probe(tmp_path, patch_works=False)
+
+    assert [c["patch_check"]["held"] for c in trace["cycles"]] == [False, False]
+
+
+def test_the_fault_sequence_is_the_same_with_or_without_the_check(tmp_path: Path) -> None:
+    with_check, _ = _run_with_app_probe(tmp_path, patch_works=True)
+    without, _, _ = _run_once(1729, tmp_path / "plain.json")
+
+    assert with_check["fault_sequence"] == without["fault_sequence"]

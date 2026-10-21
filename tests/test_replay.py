@@ -29,6 +29,7 @@ from bedlam.replay import (
     Recording,
     RecordingSearchBackend,
     RecordingTransport,
+    ReplayAppProbe,
     ReplayProbe,
     ReplaySearchBackend,
     ReplayTransport,
@@ -46,6 +47,8 @@ def _replay(recording: Recording) -> tuple[list[str], int, list[str]]:
     transport = ReplayTransport(recording)
     backend = ReplaySearchBackend(recording)
     probe = ReplayProbe(recording)
+    # Recordings from before the check have no reads through the app.
+    app_probe = ReplayAppProbe(recording) if recording.app_probes else None
     models = ModelClient(transport, root_seed=recording.root_seed, backoff_s=0.0)
     search = SearchClient(backend)
     manifest = load_manifest()
@@ -57,6 +60,7 @@ def _replay(recording: Recording) -> tuple[list[str], int, list[str]]:
         patches=ScriptedPatchSource(),
         manifest=manifest,
         root_seed=recording.root_seed,
+        app_probe=app_probe,
     )
     trace = Trace(root_seed=recording.root_seed, manifest=manifest)
     try:
@@ -65,6 +69,7 @@ def _replay(recording: Recording) -> tuple[list[str], int, list[str]]:
         pass  # the mismatch that caused it is in `transport.mismatches`
     sequence = trace.to_dict(models, search)["fault_sequence"]
     unused = transport.unused() + backend.unused() + probe.unused()
+    unused += app_probe.unused() if app_probe else 0
     return sequence, unused, transport.mismatches
 
 

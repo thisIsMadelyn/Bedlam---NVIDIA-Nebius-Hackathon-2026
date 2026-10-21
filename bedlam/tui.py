@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import math
 import os
 import re
@@ -68,11 +69,13 @@ from bedlam.models.client import CallRecord, ModelClient
 from bedlam.models.map import LABELS
 from bedlam.patches import (
     DEFAULT_PATCH_DIR,
+    DEFAULT_TARGET,
     GitPatchSource,
     Patch,
     PatchSource,
     ScriptedPatchSource,
 )
+from bedlam.probes.app import AppResult
 from bedlam.probes.result import DEFAULT_TIMEOUT_S
 from bedlam.search.tavily import SearchCall, SearchClient
 from bedlam.stats import ContainerStats, StatsUnavailable
@@ -737,6 +740,8 @@ class BedlamApp(App[int]):
         if "patched" in steps:
             patch = steps["patched"]["patch"]
             self._field("patch", f"{patch['source']} ({patch['chars']} chars)")
+        if "patch_checked" in steps:
+            self._field("held?", _check_text(steps["patch_checked"]["check"]))
         if "fault_removed" in steps:
             self._field("after", _health_text(steps["fault_removed"]["snapshot"]))
         if "analysed" in steps:
@@ -1017,6 +1022,22 @@ class BedlamApp(App[int]):
         self._patch, self._analysis = fields["patch"], None
         patch = fields["patch"]
         self._say(f"patch in: {patch['source']} ({patch['chars']} chars)")
+
+    def _on_deploying(self, fields: dict[str, Any]) -> None:
+        self._fault, self._blast = None, []
+        self._say("fault out. your app restarts with the patch")
+
+    def _on_retesting(self, fields: dict[str, Any]) -> None:
+        self._fault, self._blast = fields["fault"], fields["blast_radius"]
+        self._say(f"same fault again: {self._fault}, against your patch", style=f"bold {DAMAGE}")
+
+    def _on_patch_checked(self, fields: dict[str, Any]) -> None:
+        self._probing_since = None
+        check = fields["check"]
+        text = f"through the app: {_check_text(check)}"
+        style = f"bold {GO}" if check["held"] else f"bold {DAMAGE}"
+        for line in wrap(text, indent=17, width=self._say_width()):
+            self._say(line, style=style)
 
     def _on_fault_removed(self, fields: dict[str, Any]) -> None:
         self._probing_since = None
@@ -1575,6 +1596,13 @@ def _shown_path(path: Path) -> str:
         return str(path)
 
 
+def _check_text(check: dict[str, Any]) -> str:
+    """`hung 6000ms → answered in 180ms · patch held`, from a patch check."""
+    before, after = AppResult.from_dict(check["before"]), AppResult.from_dict(check["after"])
+    verdict = "patch held" if check["held"] else "patch did not hold"
+    return f"{before.text()} → {after.text()} · {verdict}"
+
+
 def _voice_style(quoted: bool) -> str:
     return f"bold italic {GO}" if quoted else f"italic {ACCENT}"
 
@@ -1593,8 +1621,10 @@ def main(argv: list[str] | None = None) -> int:
 
     patches: PatchSource
     if args.scripted:
-        patches = ScriptedPatchSource(args.patches)
+        # Applied to the target as each round asks, reverted when the TUI exits.
+        patches = scripted = ScriptedPatchSource(args.patches, target=DEFAULT_TARGET)
     else:
+        scripted = None
         try:
             patches = GitPatchSource()
         except (ValueError, OSError, subprocess.CalledProcessError) as exc:
@@ -1622,7 +1652,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     app.decision_file = decision_path(trace_path)
     app.trace_file = trace_path
-    app.run()
+    with scripted or contextlib.nullcontext():
+        app.run()
     return app.exit_code if app.exit_code is not None else 1
 
 

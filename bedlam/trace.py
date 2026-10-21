@@ -44,6 +44,7 @@ class Trace:
     manifest: tuple[Dependency, ...]
     started_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     baseline: dict[str, Any] | None = None
+    app_baseline: dict[str, Any] | None = None  # the read through the app, unfaulted
     cycles: list[dict[str, Any]] = field(default_factory=list)
     escalation: dict[str, Any] | None = None
     outcome: str = "running"
@@ -75,6 +76,7 @@ class Trace:
             },
             "manifest": [asdict(dep) for dep in self.manifest],
             "baseline": self.baseline,
+            "app_baseline": self.app_baseline,
             "cycles": self.cycles,
             "escalation": self.escalation,
             "model_calls": [record.to_dict() for record in models.records],

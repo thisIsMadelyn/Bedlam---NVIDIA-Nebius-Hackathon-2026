@@ -16,7 +16,8 @@ from bedlam.voice import LINES, QUOTES, Voice
 
 EVENTS = {
     "probing", "baseline", "cycle_started", "searching", "routed", "selected", "injecting",
-    "probed", "symptom", "awaiting_patch", "patched", "fault_removed", "analysed",
+    "probed", "symptom", "awaiting_patch", "patched", "deploying", "retesting", "patch_checked",
+    "fault_removed", "analysed",
     "escalating", "trade_off", "chosen", "showing_cost", "cost_shown", "cost_removed",
     "finished",
 }  # fmt: skip

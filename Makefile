@@ -12,8 +12,11 @@ fmt:
 	ruff format .
 
 # Phase 1 onwards — these fail until the target stack exists.
+# Seeding is the boilerplate's own idempotent script: tables, the free tier,
+# and the admin the app probe signs in as.
 up:
 	docker compose up -d --wait
+	docker compose exec -T -w /app api python scripts/setup_initial_data.py
 
 down:
 	docker compose down -v

@@ -85,6 +85,14 @@ LINES: Final[dict[str, tuple[str, ...]]] = {
         "your turn. I'll wait. the fault won't.",
         "patch it. I'll be reading the diff.",
     ),
+    "patch_checked:held": (
+        "it held. annoying. I'll go around it.",
+        "your fix took the hit. the next fault won't aim there.",
+    ),
+    "patch_checked:missed": (
+        "same fault, same damage. your fix missed.",
+        "patched and still broken. my favourite kind.",
+    ),
     "fault_removed": (
         "fault lifted. the stack exhales.",
         "I've stopped. for now.",
@@ -157,6 +165,8 @@ def _refine(kind: str, fields: dict[str, Any]) -> tuple[str | None, dict[str, An
     if kind == "symptom":
         symptom = fields["symptom"]
         return symptom["kind"], {"layer": symptom["layer"]}
+    if kind == "patch_checked":
+        return ("held" if fields["check"]["held"] else "missed"), {}
     return None, {}
 
 

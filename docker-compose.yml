@@ -56,7 +56,22 @@ services:
       target: dev
     env_file:
       - ./targets/fastapi-boilerplate/backend/.env.example
+    # The patch runs: the target's source is mounted over the image's copy,
+    # and the dev target's `fastapi dev` reloads when a file changes. Change
+    # events from a Windows or macOS host do not cross the mount, so the
+    # watcher polls. The boilerplate's own seed scripts are mounted read-only
+    # for `make up`, which seeds the admin the app probe signs in as.
+    volumes:
+      - ./targets/fastapi-boilerplate/backend/src:/app/src
+      - ./targets/fastapi-boilerplate/backend/scripts:/app/scripts:ro
     environment:
+      WATCHFILES_FORCE_POLLING: "true"
+      # The admin the app probe signs in as. Local placeholders, like the
+      # Postgres password above; the boilerplate's example password fails
+      # its own password policy, so the seed would skip the admin.
+      ADMIN_USERNAME: ${BEDLAM_ADMIN_USERNAME:-bedlam}
+      ADMIN_EMAIL: bedlam@example.com
+      ADMIN_PASSWORD: ${BEDLAM_ADMIN_PASSWORD:-Bedlam-local-1}
       # Route both the db and cache layers through Toxiproxy instead of the
       # real backends. Zero changes to the boilerplate's source -- this is
       # the same POSTGRES_SERVER / CACHE_REDIS_HOST / ... override mechanism

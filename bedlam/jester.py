@@ -45,6 +45,8 @@ MOODS: Final[dict[str, Mood]] = {
     "symptom:healthy": Mood.SULKING,
     "awaiting_patch": Mood.YOUR_TURN,
     "patched": Mood.READING,
+    "patch_checked:held": Mood.SULKING,
+    "patch_checked:missed": Mood.GLOATING,
     "analysed": Mood.READING,
     "escalating": Mood.SCHEMING,
     "trade_off": Mood.TWO_FACED,

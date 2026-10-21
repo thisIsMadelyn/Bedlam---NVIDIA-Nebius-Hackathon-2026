@@ -27,11 +27,13 @@ from typing import Any
 
 from bedlam.models.client import ChatResponse, ChatTransport
 from bedlam.models.map import CallSite
+from bedlam.probes.app import AppResult
 from bedlam.probes.result import HealthStatus, ProbeResult
 from bedlam.search.tavily import SearchBackend
 from bedlam.topology import Layer
 
 Probe = Callable[[], Awaitable[dict[Layer, ProbeResult]]]
+AppCheck = Callable[[], Awaitable[AppResult]]
 
 FORMAT_VERSION = 1
 
@@ -66,6 +68,10 @@ class Recording:
     model_calls: list[dict[str, Any]] = field(default_factory=list)
     searches: list[dict[str, Any]] = field(default_factory=list)
     probes: list[dict[str, Any]] = field(default_factory=list)
+    # Reads through the app, judging the patch. A recording made before
+    # they existed has none; replay then skips the check, which feeds no
+    # decision.
+    app_probes: list[dict[str, Any]] = field(default_factory=list)
 
     def write(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -76,6 +82,7 @@ class Recording:
             "model_calls": self.model_calls,
             "searches": self.searches,
             "probes": self.probes,
+            "app_probes": self.app_probes,
         }
         path.write_text(json.dumps(body, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
@@ -90,6 +97,7 @@ class Recording:
             model_calls=body["model_calls"],
             searches=body["searches"],
             probes=body["probes"],
+            app_probes=body.get("app_probes", []),
         )
 
 
@@ -175,6 +183,15 @@ def recording_probe(inner: Probe, recording: Recording) -> Probe:
             }
         )
         return results
+
+    return probe
+
+
+def recording_app_probe(inner: AppCheck, recording: Recording) -> AppCheck:
+    async def probe() -> AppResult:
+        result = await inner()
+        recording.app_probes.append(result.to_dict())
+        return result
 
     return probe
 
@@ -266,3 +283,18 @@ class ReplayProbe:
 
     def unused(self) -> int:
         return len(self._snapshots)
+
+
+class ReplayAppProbe:
+    """Returns the recorded reads through the app, in order."""
+
+    def __init__(self, recording: Recording) -> None:
+        self._results = deque(recording.app_probes)
+
+    async def __call__(self) -> AppResult:
+        if not self._results:
+            raise ReplayMismatchError("more app probes requested than were recorded")
+        return AppResult.from_dict(self._results.popleft())
+
+    def unused(self) -> int:
+        return len(self._results)

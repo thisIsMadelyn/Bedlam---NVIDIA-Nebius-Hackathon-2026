@@ -13,6 +13,7 @@ from typing import Any
 
 from bedlam.models.client import ChatResponse
 from bedlam.models.map import CallSite
+from bedlam.probes.app import AppResult
 from bedlam.probes.result import HealthStatus, ProbeResult
 from bedlam.topology import Layer
 
@@ -251,5 +252,19 @@ def probe_for(toxiproxy: FakeToxiproxy):
             )
             for layer in Layer
         }
+
+    return probe
+
+
+def app_probe_for(toxiproxy: FakeToxiproxy, *, patched: Callable[[], bool] = lambda: False):
+    """The read through the app: hangs under any fault, unless `patched()`
+    says the patch is in, when it fails fast instead."""
+
+    async def probe() -> AppResult:
+        if not toxiproxy.active:
+            return AppResult(True, 20.0, 200)
+        if patched():
+            return AppResult(False, 150.0, 503, "HTTP 503")
+        return AppResult(False, 6001.0, None, "ReadTimeout: ")
 
     return probe

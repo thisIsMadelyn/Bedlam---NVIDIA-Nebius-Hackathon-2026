@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from bedlam.patches import GitPatchSource, Patch
+from bedlam.patches import GitPatchSource, Patch, ScriptedPatchSource
 from bedlam.tui import GatedPatchSource
 
 
@@ -87,3 +87,36 @@ def test_p_with_no_changes_says_so_and_keeps_waiting() -> None:
         assert patch.diff == "+fixed\n"
 
     asyncio.run(scenario())
+
+
+@pytest.fixture
+def diffs(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    directory = tmp_path_factory.mktemp("patches")  # outside the repo
+    (directory / "cycle1.diff").write_text(
+        "--- a/redis.py\n+++ b/redis.py\n@@ -1 +1 @@\n-timeout = None\n+timeout = 2\n",
+        encoding="utf-8",
+    )
+    return directory
+
+
+def test_scripted_patches_are_applied_for_the_run_and_reverted_after(
+    repo: Path, diffs: Path
+) -> None:
+    with ScriptedPatchSource(diffs, target=repo) as source:
+        patch = asyncio.run(source.wait_for_patch(1))
+        assert "+timeout = 2" in patch.diff
+        assert (repo / "redis.py").read_text(encoding="utf-8") == "timeout = 2\n"
+    assert _git(repo, "status", "--porcelain") == ""
+
+
+def test_a_patch_left_by_a_killed_run_is_reverted_on_entry(repo: Path, diffs: Path) -> None:
+    killed = ScriptedPatchSource(diffs, target=repo)
+    asyncio.run(killed.wait_for_patch(1))  # never restored
+
+    with ScriptedPatchSource(diffs, target=repo):
+        assert _git(repo, "status", "--porcelain") == ""
+
+
+def test_without_a_target_the_diffs_are_only_read(repo: Path, diffs: Path) -> None:
+    asyncio.run(ScriptedPatchSource(diffs).wait_for_patch(1))
+    assert _git(repo, "status", "--porcelain") == ""
