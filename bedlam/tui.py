@@ -255,7 +255,7 @@ COMMANDS: Final = {
     "cost": "what your choice cost, measured live",
     "cpu": "the run's CPU per container, fault windows marked",
     "seed": "the root seed, and how to run this again",
-    "grep": "show only timeline lines with <text>; /grep alone shows all",
+    "grep": "show only lines with <text>; /grep alone shows all",
     "zoom": "one log fills the screen: /zoom timeline|agent, /zoom ends it",
     "log": "switch between the trade-off page and the run log",
     "copy": "copy the last command's output; /copy timeline: what's shown",
@@ -411,6 +411,9 @@ class BedlamApp(App[int]):
         # stays, with the post-mortem log under it.
         self._decided = False
         self._page_rows: list[tuple[str | Text, str]] = []
+        # Where the latest command's rows start in the post-mortem log: /grep
+        # never hides what was just asked for.
+        self._page_start = 0
         self._shots = 0
         # Where the run's trace is written; /save and /shot write beside it.
         self.trace_file: Path | None = None
@@ -555,6 +558,9 @@ class BedlamApp(App[int]):
         name, arg = name.lower(), rest[0].strip() if rest else ""
         said: list[str] = []
         self._replying = said
+        self._page_start = len(self._page_rows)
+        if self._grep is not None:  # the reply before this one is filtered now
+            self._redraw_page()
         try:
             self._say(f"you › {text}", style=f"bold {_TEXT}")
             if name == "sudo":
@@ -820,13 +826,16 @@ class BedlamApp(App[int]):
     def _command_grep(self, arg: str) -> None:
         self._grep = arg.lower() or None
         self._redraw_timeline()
-        if self._grep is not None:
-            hits = sum(
-                1
-                for i in range(len(self._timeline_rows))
-                if i not in self._pinned and self._shown(i)
-            )
-            self._say(f"  {hits} lines match. /grep alone shows all", style=_SOFT)
+        self._redraw_page()
+        if self._grep is None:
+            return
+        if self._on_page():
+            rows = range(self._page_start)
+            hits = sum(1 for i in rows if not _echo(self._page_rows[i][0]) and self._page_shown(i))
+        else:
+            rows = range(len(self._timeline_rows))
+            hits = sum(1 for i in rows if i not in self._pinned and self._shown(i))
+        self._say(f"  {hits} lines match. /grep alone shows all", style=_SOFT)
 
     def _command_zoom(self, arg: str) -> None:
         if self.query_one("#frame").has_class("-escalation"):
@@ -1129,9 +1138,7 @@ class BedlamApp(App[int]):
         agent.clear()
         for row in self._agent_rows:
             agent.write(self._agent_line(*row, width=widths[1]))
-        page.clear()
-        for text, style in self._page_rows:
-            page.write(_fitted(text, widths[2], style))
+        self._redraw_page()
 
     def _redraw_timeline(self) -> None:
         timeline = self.query_one("#timeline", RichLog)
@@ -1143,6 +1150,29 @@ class BedlamApp(App[int]):
         if self._grep is not None:
             title = f"{LOG} · /grep {self._grep} · /grep alone shows all"
         timeline.border_title = fit(title, LINE)
+
+    def _page_shown(self, index: int) -> bool:
+        """Whether post-mortem row `index` passes /grep.
+
+        Every row there is a command's, so only the echoes and the latest
+        command's reply always show; earlier replies are filtered.
+        """
+        text = self._page_rows[index][0]
+        if self._grep is None or index >= self._page_start or _echo(text):
+            return True
+        return self._grep in str(text).lower()
+
+    def _redraw_page(self) -> None:
+        page = self.query_one("#postmortem", RichLog)
+        page.clear()
+        width = _inner(page)
+        for index, (text, style) in enumerate(self._page_rows):
+            if self._page_shown(index):
+                page.write(_fitted(text, width, style))
+        title = "POST-MORTEM · /cycles to start, /help for the rest"
+        if self._grep is not None:
+            title = f"POST-MORTEM · /grep {self._grep} · /grep alone shows all"
+        page.border_title = fit(title, LINE)
 
     def _render_chrome(self) -> None:
         self._reflow()
@@ -1438,6 +1468,11 @@ def _fitted(text: str | Text, width: int, style: str = "") -> Text:
         line.truncate(width, overflow="ellipsis")
         return line
     return Text(fit(text, width), style=style)
+
+
+def _echo(text: str | Text) -> bool:
+    """Whether a log row is the echo of a typed command."""
+    return str(text).startswith("you › ")
 
 
 def _health_text(snapshot: dict[str, dict[str, Any]]) -> str:

@@ -411,3 +411,29 @@ def test_once_the_run_is_over_the_footer_offers_no_p() -> None:
             assert " P " not in footer and " Q " in footer and " / " in footer
 
     asyncio.run(scenario())
+
+
+def test_grep_filters_the_post_mortem_log_but_never_the_reply_just_asked_for() -> None:
+    async def scenario() -> None:
+        app = _app()
+        async with app.run_test(size=SIZE) as pilot:
+            await _drive(app, pilot)
+            await _type(pilot, "cycles")
+            await _type(pilot, "grep c1")
+            shown = _page(app)
+            assert sum(row.lstrip().startswith(("c1 ", "c2 ", "tf ")) for row in shown) == 1
+            assert any(row.lstrip().startswith("c1 ") for row in shown)
+            assert "you › /cycles" in shown, "an echo was filtered out"
+            assert _reply(app, "grep c1") == ["  1 lines match. /grep alone shows all"]
+            assert "/grep c1" in app.query_one("#postmortem", RichLog).border_title
+            await _type(pilot, "cycle 2")  # the latest reply shows in full
+            assert any("cycle 2 of 2" in row for row in _page(app))
+            assert any("defends" in row for row in _page(app))
+            await _type(pilot, "status")  # and the one before it is filtered now
+            assert not any("cycle 2 of 2" in row for row in _page(app))
+            await _type(pilot, "grep")
+            shown = _page(app)
+            assert any("cycle 2 of 2" in row for row in shown)
+            assert sum(row.lstrip().startswith(("c1 ", "c2 ", "tf ")) for row in shown) == 3
+
+    asyncio.run(scenario())
