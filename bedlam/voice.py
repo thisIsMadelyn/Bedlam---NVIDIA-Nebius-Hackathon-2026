@@ -131,25 +131,25 @@ LINES: Final[dict[str, tuple[str, ...]]] = {
 # Quoted without film or character names: the demo video shows no
 # third-party marks.
 QUOTES: Final[dict[str, str]] = {
-    "baseline": "everything is green. Why so serious?",
+    "baseline": "Everything is green. Not for long!",
     "selected": "{fault}. What's the most you ever lost on a coin toss?",
     "injecting:bandwidth": "{layer}, I drink your milkshake!",
     "injecting:connection_cut": "Here's Johnny! {layer}'s connection, meet the axe.",
     "symptom:stalled": "{layer} stopped answering. You're gonna need a bigger boat.",
     "awaiting_patch": "Never send a human to do a machine's job. your turn anyway.",
-    "analysed": "patch read. Resistance is futile.",
+    "analysed": "Patch read. Resistance is futile.",
     "trade_off": "I'm gonna make him an offer he can't refuse. you can, though.",
 }
 
 
 # The jester's last word, on the end splash once a run completes. Fixed, not
 # picked: every completed run ends on the same moral.
-MORAL: Final = "it was never stable. you just stopped looking."
+MORAL: Final = "it was never stable. you just stopped patching."
 SIGN_OFF: Final = "same time next sprint."
 
 # /sudo, the command /help never lists. It runs nothing.
-SUDO: Final = "you are not in the sudoers file. this incident will be reported."
-SUDO_CHOOSE: Final = "nice try. even root can't make this choice for you."
+SUDO: Final = "You are not in the sudoers file. This incident will be reported."
+SUDO_CHOOSE: Final = "Nice try. Even root can't make this choice for you."
 
 
 def _refine(kind: str, fields: dict[str, Any]) -> tuple[str | None, dict[str, Any]]:

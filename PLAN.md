@@ -387,7 +387,7 @@ options leave room. Commands, all read from the run's own events:
 
 Approved 21 Oct, before Phase 5. When a run completes, the launch splash comes
 back with the jester's moral under the wordmark, fixed text, no model call:
-"it was never stable. you just stopped looking." and, dim, "same time next
+"it was never stable. you just stopped patching." and, dim, "same time next
 sprint." Any key returns to the frame; Q quits from there.
 
 ### Agent and resource usage on screen

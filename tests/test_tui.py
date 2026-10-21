@@ -156,11 +156,11 @@ def test_bedlam_says_holds_the_latest_line_and_marks_quotes() -> None:
             app.on_loop_event("baseline", {"snapshot": snapshot})
             await pilot.pause(0.1)
             says = app.query_one("#says", Static)
-            assert "Why so serious?" in str(says.render())
+            assert "Not for long!" in str(says.render())
             assert app._voice.quoted
             app.on_loop_event("cycle_started", {"cycle": 1})
             await pilot.pause(0.1)
-            assert "Why so serious?" not in str(says.render())
+            assert "Not for long!" not in str(says.render())
             assert not app._voice.quoted
 
     asyncio.run(scenario())
