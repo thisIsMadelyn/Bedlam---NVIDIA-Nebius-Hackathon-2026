@@ -47,7 +47,10 @@ columns up, so the screen stays fully readable at the 82-column minimum.
 
 ## Status
 
-Phase 0 — foundations. See `PLAN.md` for the build schedule and the current phase.
+Phases 1–4 complete: fault injection, the headless decision chain, the
+terminal UI and the trade-off escalation run end to end. Next: Phase 5,
+rehearsal and feature freeze. See `PLAN.md` for the build schedule and the
+current phase.
 
 ## Setup
 
