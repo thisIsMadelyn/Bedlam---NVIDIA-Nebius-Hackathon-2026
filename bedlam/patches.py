@@ -176,12 +176,27 @@ class ScriptedPatchSource:
         diff = "".join(path.read_text(encoding="utf-8") for path in shown)
         return Patch(cycle=cycle, source=source, diff=diff)
 
+    def _for_target(self, path: Path) -> bytes:
+        """The diff with the line endings of the file it patches.
+
+        A Windows clone with autocrlf on can check out the diffs, the
+        target, or both with CRLF. `git apply` only matches a CRLF file
+        with a CRLF diff, so the diff follows the file. A new file has
+        nothing to follow and stays LF.
+        """
+        diff = path.read_bytes().replace(b"\r\n", b"\n")
+        names = [line[6:] for line in diff.split(b"\n") if line.startswith((b"+++ b/", b"--- a/"))]
+        patched = Path(self._target or ".") / names[0].decode("utf-8") if names else None
+        if patched is not None and patched.is_file() and b"\r\n" in patched.read_bytes():
+            return diff.replace(b"\n", b"\r\n")
+        return diff
+
     def _apply(self, path: Path, *flags: str, check: bool = True) -> bool:
-        # autocrlf off: the diffs and the checkout are LF, and a Windows git
-        # with autocrlf on would write CRLF back and leave the tree dirty.
+        # autocrlf off: git applies the bytes as given, so the file keeps its
+        # own line endings and the tree is clean once the diff is reverted.
         result = subprocess.run(
             ["git", "-c", "core.autocrlf=false", "-C", str(self._target), "apply", *flags],
-            input=path.read_bytes(),
+            input=self._for_target(path),
             capture_output=True,
             check=False,
         )

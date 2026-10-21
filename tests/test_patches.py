@@ -171,3 +171,26 @@ def test_every_component_touches_one_file_and_applies_to_the_target() -> None:
             capture_output=True,
         )
         assert check.returncode == 0, f"{component}: {check.stderr.decode()}"
+
+
+@pytest.mark.parametrize("target_eol", ["\n", "\r\n"], ids=["file LF", "file CRLF"])
+@pytest.mark.parametrize("diff_eol", ["\n", "\r\n"], ids=["diff LF", "diff CRLF"])
+def test_a_fix_applies_whatever_line_endings_a_windows_clone_gave_either_side(
+    repo: Path, tmp_path_factory: pytest.TempPathFactory, target_eol: str, diff_eol: str
+) -> None:
+    (repo / "redis.py").write_bytes(f"timeout = None{target_eol}".encode())
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "--allow-empty", "-m", "line endings")
+    directory = tmp_path_factory.mktemp("patches")
+    diff = "--- a/redis.py\n+++ b/redis.py\n@@ -1 +1 @@\n-timeout = None\n+timeout = 2\n"
+    (directory / "redis-timeouts.diff").write_bytes(diff.replace("\n", diff_eol).encode())
+    (directory / "auth-cache.diff").write_bytes(
+        "--- /dev/null\n+++ b/auth_cache.py\n@@ -0,0 +1 @@\n+fresh_s = 30\n".replace(
+            "\n", diff_eol
+        ).encode()
+    )
+
+    with ScriptedPatchSource(directory, target=repo) as source:
+        asyncio.run(source.wait_for_patch(1, "cache.connection_cut"))
+        assert (repo / "redis.py").read_bytes() == f"timeout = 2{target_eol}".encode()
+    assert _git(repo, "status", "--porcelain") == ""
