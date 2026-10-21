@@ -23,7 +23,7 @@ from bedlam.patches import ScriptedPatchSource
 from bedlam.search.manifest import load_manifest
 from bedlam.search.tavily import SearchClient
 from bedlam.trace import Trace
-from bedlam.tui import ACCENT, WIDTH, BedlamApp, GatedPatchSource
+from bedlam.tui import ACCENT, WIDTH, BedlamApp, GatedPatchSource, routing_lines
 from bedlam.voice import MORAL, SIGN_OFF
 
 SIZE = (WIDTH, 30)
@@ -290,5 +290,96 @@ def test_any_key_skips_the_splash_and_does_nothing_else() -> None:
             await pilot.pause(0.1)
             assert not app.splashing
             assert app.now.lines[-1] != EARLY_PRESS, "p reached the app"
+
+    asyncio.run(scenario())
+
+
+def _result(layer: str | None, score: float, n: int) -> dict:
+    return {
+        "url": f"https://github.com/example/{layer or 'none'}/issues/{n}",
+        "title": f"connection pool exhaustion report number {n} with a long title",
+        "score": score,
+        "query": "q",
+        "layer": layer,
+        "component": {"db": "asyncpg", "cache": "redis", "api": "httpx"}.get(layer or "", None),
+    }
+
+
+ROUTED = {
+    "cycle": 1,
+    "specialist": "db",
+    "routing": {"layer": "db", "basis": "search", "weights": {"db": 2.1, "cache": 0.7}},
+    "results": [
+        _result("db", 0.71, 1),
+        _result(None, 0.69, 2),
+        _result("db", 0.7, 3),
+        _result("cache", 0.7, 4),
+        _result("db", 0.69, 5),
+        _result(None, 0.4, 6),
+    ],
+}
+
+
+@pytest.mark.parametrize("width", [73, 111], ids=["82 minimum", "wide"])
+def test_the_routing_block_shows_the_evidence_and_fits(width: int) -> None:
+    lines = [text for text, _ in routing_lines(ROUTED, width)]
+
+    assert all(len(line) <= width for line in lines)
+    assert lines[0] == "6 results. Nano labels each one by layer:"
+    shown = lines[1:5]
+    assert [row.split()[0] for row in shown] == ["db", "db", "cache", "·"]  # strongest first
+    assert lines[5] == "  … 2 more: 1 db, 1 about no layer"
+    bars = {row.split()[0]: row for row in lines[7:10]}
+    assert bars.keys() == set(LAYERS), "every layer gets a row, even at zero"
+    assert bars["db"].endswith("◀ db specialist") and "◀" not in bars["cache"]
+    assert bars["db"].count("█") > bars["cache"].count("█") and "█" not in bars["api"]
+    assert lines[-1] == "routed by search: Tavily's results picked the db specialist"
+
+
+def test_titles_show_only_where_they_fit_and_never_as_a_stub() -> None:
+    long_url = {
+        **_result("db", 0.9, 7),
+        "url": "https://github.com/NousResearch/hermes/issues/58236",
+    }
+    fields = {**ROUTED, "results": [long_url, *ROUTED["results"]]}
+    for width in (73, 111):
+        for row in [text for text, _ in routing_lines(fields, width)][1:5]:
+            title = row.partition("connection pool")[1:]
+            if title[0]:
+                assert len("".join(title).rstrip("…")) >= 15, f"a stub at {width}: {row!r}"
+    narrow = routing_lines(fields, 73)[1][0]
+    assert narrow.endswith("issues/58236"), "no room at 82: the URL ends the row"
+    assert "connection pool" in routing_lines(fields, 111)[1][0]
+
+
+@pytest.mark.parametrize(
+    ("basis", "closing"),
+    [
+        ("symptom", "routed by the symptom: no result named a layer"),
+        ("seeded", "routed by the seeded draw: no result named a layer, no symptom yet"),
+    ],
+)
+def test_a_fallback_never_passes_for_a_search_decision(basis: str, closing: str) -> None:
+    fields = {**ROUTED, "routing": {**ROUTED["routing"], "basis": basis, "weights": {}}}
+    fields["results"] = [_result(None, 0.5, 1)]
+    lines = [text for text, _ in routing_lines(fields, 73)]
+    assert lines[-1] == closing
+    assert "◀ db specialist" in next(row for row in lines if row.split()[:1] == ["db"])
+
+
+def test_no_results_says_so() -> None:
+    fields = {**ROUTED, "results": [], "routing": {**ROUTED["routing"], "basis": "seeded"}}
+    assert routing_lines(fields, 73)[0][0] == "no results came back"
+
+
+def test_the_routing_block_lands_in_the_timeline_unwrapped_at_82() -> None:
+    async def scenario() -> None:
+        app = _app()
+        async with app.run_test(size=SIZE) as pilot:
+            app.on_loop_event("routed", ROUTED)
+            await pilot.pause(0.2)
+            rows = [strip.text.rstrip() for strip in app.query_one("#timeline", RichLog).lines]
+            expected = [text for text, _ in routing_lines(ROUTED, app._say_width())]
+            assert all(any(row.endswith(text) for row in rows) for text in expected)
 
     asyncio.run(scenario())

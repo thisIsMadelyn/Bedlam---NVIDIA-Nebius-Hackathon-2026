@@ -982,9 +982,8 @@ class BedlamApp(App[int]):
 
     def _on_routed(self, fields: dict[str, Any]) -> None:
         self._routed = fields
-        routing = fields["routing"]
-        weights = " · ".join(f"{k} {v:.2f}" for k, v in routing["weights"].items())
-        self._say(f"routed to {fields['specialist']} ({routing['basis']}: {weights})")
+        for text, style in routing_lines(fields, self._say_width()):
+            self._say(text, style=style)
 
     def _on_selected(self, fields: dict[str, Any]) -> None:
         selection = fields["selection"]
@@ -1594,6 +1593,69 @@ def _shown_path(path: Path) -> str:
         return path.resolve().relative_to(_REPO_ROOT).as_posix()
     except ValueError:
         return str(path)
+
+
+# Results shown per routing, strongest first; the rest are counted by label.
+_ROUTING_RESULTS: Final = 4
+_TITLE_MIN: Final = 15
+_ROUTING_BASIS: Final = {
+    "symptom": "routed by the symptom: no result named a layer",
+    "seeded": "routed by the seeded draw: no result named a layer, no symptom yet",
+}
+
+
+def routing_lines(fields: dict[str, Any], width: int) -> list[tuple[str, str]]:
+    """The routing moment: what Tavily returned, how Nano labelled it, and
+    the summed scores that picked the specialist. Display only."""
+    results = sorted(fields["results"], key=lambda r: -r["score"])
+    routing, specialist = fields["routing"], fields["specialist"]
+    lines: list[tuple[str, str]] = []
+    if results:
+        lines.append((f"{len(results)} results. Nano labels each one by layer:", ""))
+        shown = results[:_ROUTING_RESULTS]
+        component_w = max(len(r.get("component") or "") for r in shown)
+        for result in shown:
+            where = re.sub(r"^https?://(www\.)?", "", result["url"])
+            text = (
+                f"  {result['layer'] or '·':<5} {result['score']:.2f}  "
+                f"{(result.get('component') or ''):<{component_w}}  {where}"
+            )
+            # A title only where enough of it fits to read; never a stub.
+            if width - len(text) - 2 >= _TITLE_MIN:
+                text += f"  {result['title']}"
+            lines.append((_clip(text, width), _SOFT))
+        rest = results[_ROUTING_RESULTS:]
+        if rest:
+            counts = [
+                f"{n} {layer.value}"
+                for layer in Layer
+                if (n := sum(r["layer"] == layer.value for r in rest))
+            ]
+            if unlabelled := sum(r["layer"] is None for r in rest):
+                counts.append(f"{unlabelled} about no layer")
+            lines.append((f"  … {len(rest)} more: {', '.join(counts)}", _SOFT))
+    else:
+        lines.append(("no results came back", _SOFT))
+    lines.append(("score per layer, summed:", ""))
+    weights = {layer.value: routing["weights"].get(layer.value, 0.0) for layer in Layer}
+    top = max(weights.values()) or 1.0
+    bar_w = max(10, min(40, width - 42))
+    for layer, weight in weights.items():
+        bar = "█" * round(bar_w * weight / top) if weight else ""
+        won = layer == routing["layer"]
+        text = f"  {layer:<6} {bar:<{bar_w}}  {weight:.2f}"
+        if won:
+            text += f"  ◀ {specialist} specialist"
+        lines.append((text, ACCENT if won else _SOFT))
+    closing = _ROUTING_BASIS.get(
+        routing["basis"], f"routed by search: Tavily's results picked the {specialist} specialist"
+    )
+    lines.append((closing, f"bold {ACCENT}"))
+    return lines
+
+
+def _clip(text: str, width: int) -> str:
+    return text if len(text) <= width else text[: width - 1] + "…"
 
 
 def _check_text(check: dict[str, Any]) -> str:
