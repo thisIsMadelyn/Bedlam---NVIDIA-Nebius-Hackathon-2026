@@ -239,6 +239,10 @@ Artifacts:
 - `model_map` documented with the reasoning for each assignment
 - Architecture notes: why sequential faults, why Tavily over structured vulnerability
   databases, why Super over Ultra
+- Developer manual (raised 21 Oct): for the developer running the app. The
+  loop step by step (fault, symptom, your turn, restart, same fault, verdict,
+  analysis, trade-off), scripted vs real patch mode, every key and slash
+  command, the post-mortem page, and what each panel shows
 
 Done when:
 - [ ] A stranger can run the project from the README with no other input
@@ -422,3 +426,10 @@ phase before work starts.
   patch mode stays for the builder, and may be used for the video.
 - **Video length is not a risk.** The loop finishes in seconds; 3:00 is
   ample.
+
+### Trade-off page redesign
+
+Raised 21 Oct: the user does not like the trade-off page's graphics and
+wants them redesigned. After submission, unless a phase is given to it
+first. Constraints stay: the choice is the developer's, every line fits 82
+columns, and the page still shows the cost live once chosen.
