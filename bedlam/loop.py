@@ -471,6 +471,7 @@ def main(argv: list[str] | None = None) -> int:
     # The prepared diffs are applied to the target for the run, so the api
     # runs them, and reverted when it ends.
     with ScriptedPatchSource(args.patches, target=DEFAULT_TARGET) as patches:
+        patches.settle()
         return asyncio.run(execute(root_seed, patches, trace_path, args.record, choices=choices))
 
 

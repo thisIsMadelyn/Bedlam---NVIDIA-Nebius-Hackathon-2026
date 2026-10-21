@@ -139,13 +139,24 @@ class ScriptedPatchSource:
         self._directory = directory
         self._target = target
         self._applied: list[Path] = []
+        # What entering reverted. The api reloads on that change, so the run
+        # must wait for it (`settle`) before its baseline.
+        self.cleaned: list[str] = []
 
     def __enter__(self) -> ScriptedPatchSource:
         if self._target is not None:
             for path in sorted(self._directory.glob("*.diff")):
                 if self._apply(path, "-R", "--check", check=False):
                     self._apply(path, "-R")
+                    self.cleaned.append(path.name)
         return self
+
+    def settle(self) -> None:
+        """After cleaning up a killed run, restart the api on the clean code
+        and wait until it serves. Nothing to clean: returns at once."""
+        if self.cleaned:
+            log_event(_LOG, "reverted a killed run's fixes", fixes=self.cleaned)
+            asyncio.run(deploy())
 
     def __exit__(self, *exc: object) -> None:
         self.restore()

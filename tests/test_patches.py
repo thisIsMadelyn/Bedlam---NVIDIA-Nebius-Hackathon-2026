@@ -133,8 +133,9 @@ def test_a_fix_left_by_a_killed_run_is_reverted_on_entry(repo: Path, diffs: Path
     killed = ScriptedPatchSource(diffs, target=repo)
     asyncio.run(killed.wait_for_patch(1, "cache.connection_cut"))  # never restored
 
-    with ScriptedPatchSource(diffs, target=repo):
+    with ScriptedPatchSource(diffs, target=repo) as fresh:
         assert _git(repo, "status", "--porcelain") == ""
+        assert fresh.cleaned == ["auth-cache.diff", "redis-timeouts.diff"], "settle must wait"
 
 
 def test_without_a_target_the_diffs_are_only_read(repo: Path, diffs: Path) -> None:
@@ -194,3 +195,9 @@ def test_a_fix_applies_whatever_line_endings_a_windows_clone_gave_either_side(
         asyncio.run(source.wait_for_patch(1, "cache.connection_cut"))
         assert (repo / "redis.py").read_bytes() == f"timeout = 2{target_eol}".encode()
     assert _git(repo, "status", "--porcelain") == ""
+
+
+def test_a_clean_start_has_nothing_to_settle(repo: Path, diffs: Path) -> None:
+    with ScriptedPatchSource(diffs, target=repo) as source:
+        assert source.cleaned == []
+        source.settle()  # returns at once: no restart without a cleanup
