@@ -23,6 +23,47 @@ badges of either kind.
 
 ---
 
+## Session [2026-10-21-1737]
+
+- **Start status:** `84a89e6`, working tree clean, 122 tests passing.
+  Phases 1–4 complete. The TUI command line had `/help`, `/patch`,
+  `/choose` and `/quit`; the run ended back on the run log, and commands
+  typed on the trade-off page replied into a hidden panel.
+- **End status:** `710a48d`, working tree clean apart from this entry, 145
+  tests passing, lint and format clean. Replay test passes; no decision
+  path changed, so the fixture was not re-recorded. Still open: `/grep`'s
+  count reads "1 lines match"; the README does not yet mention the
+  commands, the end splash or `make run SEED=` (Phase 6). Next: Phase 5
+  (rehearsal and feature freeze, Mon 26 Oct).
+- **Badges:**
+  - 🆕 Addition — End splash: a completed run brings the jester back with
+    the moral, fixed text, no model call: "it was never stable. you just
+    stopped looking." and, dim, "same time next sprint." Any key returns to
+    the frame; a failed run ends without it.
+  - 🆕 Addition — `make run SEED=1729` passes the root seed to the TUI.
+  - 🆕 Addition — Run commands: `/status`, `/why` (routing weights and the
+    Tavily results behind them; the `routed` event now carries the
+    classified results already in the trace), `/diff`, `/seed` (states that
+    only replays reproduce exactly).
+  - 🆕 Addition — Output and layout commands: Tab completion, `/grep`,
+    `/zoom timeline|agent`, `/copy` (OSC 52), `/save` (text beside the
+    trace), `/shot` (SVG), and a hidden `/sudo` that runs nothing.
+    Textual's Ctrl+P palette is off, so `/` is the only command line.
+  - 🆕 Addition — Post-mortem page: the run ends on the decided trade-off
+    (choice marked, cost shown live, decision record) with a POST-MORTEM
+    log under it, until Q; a 5-row strip of the same log while choosing,
+    when the options leave room. `/cycles`, `/cycle N`, `/why N`,
+    `/diff N`, `/calls`, `/cost`, `/cpu`, `/log`, all read from the run's
+    own events.
+  - 🐛 Bug fix — On the trade-off page every command replied into the
+    hidden timeline, so the command line looked dead there.
+  - 🐛 Bug fix — The footer offered P after the run was over.
+  - 🆕 Addition — `/grep` filters the post-mortem log: earlier replies
+    filtered, echoes and the latest reply always shown.
+  - 🆕 Addition — A test runs every command, `/sudo`, an unknown command
+    and free text during the trade-off and after the run, and fails if the
+    model or Tavily call counts move: the command line is not a chat.
+
 ## Session [2026-10-21-1506]
 
 - **Start status:** `ea2af77`, working tree clean, 96 tests passing. Phases 3
