@@ -9,7 +9,6 @@ from test_tui import SIZE, WIDE, _app, _drive
 from textual.widgets import Input, RichLog, Static
 
 from bedlam.patches import ScriptedPatchSource
-from bedlam.topology import Layer
 from bedlam.tui import COMMANDS, SAY, BedlamApp
 from bedlam.voice import SUDO, SUDO_CHOOSE
 
@@ -305,7 +304,7 @@ def test_the_run_ends_on_the_decided_trade_off_with_a_post_mortem_log(size) -> N
             assert page.has_focus
             rows = [s.text for s in app.screen._compositor.render_strips()]
             assert any("◀ you chose this" in row for row in rows)
-            assert any("cost shown live:" in row for row in rows)
+            assert any("the cost, live:" in row for row in rows)
             before = len(app._timeline_rows)
             for command in ("cycles", "cycle 1", "why 1", "calls", "cost", "help"):
                 await _type(pilot, command)
@@ -348,13 +347,6 @@ def test_the_post_mortem_commands_tell_the_run_back() -> None:
             labels = [row.split()[0] for row in _reply(app, "cost") if row[2] != " "]
             assert labels[:4] == ["you", "you", "felt", "shown"]
             assert labels[4:] == ["before", "under", "after"]
-            await _type(pilot, "cpu")
-            assert _reply(app, "cpu") == [
-                "  no cpu samples in this run: docker stats were not read"
-            ]
-            app._run_cpu = [{layer: 10.0 * i for layer in Layer} for i in range(20)]
-            await _type(pilot, "cpu")
-            assert len(_reply(app, "cpu")) == 2 + len(Layer) * 2
 
     asyncio.run(scenario())
 

@@ -381,7 +381,6 @@ options leave room. Commands, all read from the run's own events:
 - `/why N`, `/diff N` — the existing commands, for any cycle
 - `/calls` — model calls per call site, Tavily, totals
 - `/cost` — the chosen option's cost, health before, under and after it
-- `/cpu` — the run's CPU chart; the decided page has no room for it standing
 - `/log` — switch between the trade-off page and the run log
 
 ### End splash
@@ -430,6 +429,15 @@ phase before work starts.
 ### Trade-off page redesign
 
 Raised 21 Oct: the user does not like the trade-off page's graphics and
-wants them redesigned. After submission, unless a phase is given to it
-first. Constraints stay: the choice is the developer's, every line fits 82
-columns, and the page still shows the cost live once chosen.
+wants them redesigned. Brought forward the same day, before Phase 5's
+freeze: A and B as two cards side by side with their rows aligned, the
+same look while the choice waits; "how you got here", one line per round
+with the patch verdict, replaces the CPU chart under the trade-off, which
+is removed along with `/cpu`. The panel takes only the rows it needs; the
+command replies get the rest. The empty reply log shows a dim field (from
+a Claude Design session): a thin band rising from A to B in two shades, at
+4:1 contrast, until the first command reply takes its place.
+
+**First fix on 22 Oct:** the field shows only after the choice is made
+(on the decided page), not while the trade-off waits for the choice,
+which is where it belongs.

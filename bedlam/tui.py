@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import functools
 import math
 import os
 import re
@@ -30,7 +31,6 @@ import textwrap
 import time
 from collections import deque
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
@@ -107,17 +107,18 @@ _BACKGROUND: Final = "#1C1A24"
 _SURFACE: Final = "#23212D"
 _TEXT: Final = "#E6E4EF"
 _SOFT: Final = "#A29FB2"
+# The post-mortem field: dim, but 4:1 on the background, so a laptop panel
+# in a lit room still shows it (MUTED, 2.45:1, does not).
+_FIELD_INK: Final = "#7B7792"
 _JESTER_COLOURS: Final = {
     "accent": ACCENT, "ink": INK, "muted": MUTED, "go": GO, "soft": _SOFT, "text": _TEXT,
 }  # fmt: skip
 _SPLASH_COLOURS: Final = {**_JESTER_COLOURS, "background": _BACKGROUND}
 # How many search results /why lists without a cycle; /why 1 lists them all.
 _WHY_RESULTS: Final = 3
-# The post-mortem log while the trade-off waits: 5 rows and its border. It
-# shows only when the options leave that much room.
-_STRIP_ROWS: Final = 7
-# Rows per container in /cpu's chart.
-_CPU_ROWS: Final = 2
+# The post-mortem log while the trade-off waits: it takes every row the
+# cards leave, and shows once at least 3 rows and its border are left.
+_STRIP_ROWS: Final = 5
 # Labels in /cycle and /cost: two spaces, the label, a space.
 _FIELD: Final = 10
 # How long the launch splash holds before the run starts. Any key skips it.
@@ -134,17 +135,12 @@ _STATS_RETRY_S: Final = 5.0
 # "  cpu  12.3% ▁▂▃▄▅▆▇█ mem  220M": fits next to a minimum bar at 82 columns.
 _LOAD_WIDTH: Final = 2 + 3 + 7 + 1 + _SPARK_LEN + 1 + 3 + 6
 _BAR_MAX: Final = 60
-# "    you gain  ": the hanging indent of a trade-off option's gain and cost.
-_SIDE_INDENT: Final = 14
+# A trade-off card: "│ " and " │" around a row, and "gain  " before it.
+_CARD_FRAME: Final = 4
+_CARD_LABEL: Final = 6
+# Rows above and below the trade-off panel and its replies.
+_FIXED_ROWS: Final = ("header", "top", "says", "command", "footer")
 _BAR_CEILING_MS: Final = 2000.0
-# The run-so-far chart under the trade-off: "cache " before each row, at
-# most eight rows per container, and a blank line, a title and the fault
-# labels above the rows. Drawn only in height the options leave spare.
-_CHART_LABEL: Final = 6
-_CHART_MAX_ROWS: Final = 8
-_CHART_FRAME: Final = 3
-# CPU samples kept for the whole run: hours of sampling, far past a demo.
-_RUN_SAMPLES: Final = 4000
 _REPO_ROOT: Final = Path(__file__).resolve().parents[1]
 _LOG = get_logger("bedlam.tui")
 _SAYS: Final = " BEDLAM "
@@ -231,15 +227,6 @@ class GatedChoice:
         return True
 
 
-@dataclass(slots=True)
-class FaultWindow:
-    """The CPU samples taken while one fault was live: [start, end)."""
-
-    start: int
-    end: int | None
-    label: str
-
-
 Launch = Callable[["BedlamApp"], Awaitable[int]]
 
 StatsSource = Callable[[], Awaitable[dict[Layer, ContainerStats]]]
@@ -256,7 +243,6 @@ COMMANDS: Final = {
     "diff": "what Bedlam read in your patch. /diff 1: cycle 1's",
     "calls": "model calls per call site: model, tokens, latency",
     "cost": "what your choice cost, measured live",
-    "cpu": "the run's CPU per container, fault windows marked",
     "seed": "the root seed, and how to run this again",
     "grep": "show only lines with <text>; /grep alone shows all",
     "zoom": "one log fills the screen: /zoom timeline|agent, /zoom ends it",
@@ -305,7 +291,8 @@ class BedlamApp(App[int]):
         border-title-color: {ACCENT}; border-subtitle-color: {_SOFT};
     }}
     #system {{ height: 6; }}
-    #tradeoff {{ display: none; height: 1fr; border: heavy {GO}; }}
+    #tradeoff {{ display: none; height: auto; border: heavy {GO}; }}
+    #postmortem.-field {{ padding: 0; }}
     #frame.-escalation #tradeoff {{ display: block; }}
     #frame.-escalation #system, #frame.-escalation #body {{ display: none; }}
     #frame.-zoomed #system {{ display: none; }}
@@ -387,8 +374,6 @@ class BedlamApp(App[int]):
         self._cpu: dict[Layer, deque[float]] = {layer: deque(maxlen=_SPARK_LEN) for layer in Layer}
         self._load_note = "cpu and memory: starting" if stats else ""
         # Every sample of the run, for the chart under the trade-off.
-        self._run_cpu: list[dict[Layer, float]] = []
-        self._windows: list[FaultWindow] = []
         self.choices = GatedChoice()
         self.choices.on_ask = self._render_chrome
         self._trade_off: dict[str, Any] | None = None
@@ -414,6 +399,7 @@ class BedlamApp(App[int]):
         # stays, with the post-mortem log under it.
         self._decided = False
         self._page_rows: list[tuple[str | Text, str]] = []
+        self._field_key: tuple[int, int] | None = None  # the log's size while the field shows
         # Where the latest command's rows start in the post-mortem log: /grep
         # never hides what was just asked for.
         self._page_start = 0
@@ -799,13 +785,6 @@ class BedlamApp(App[int]):
             if event is not None:
                 self._field(label, _health_text(event["snapshot"]))
 
-    def _command_cpu(self, arg: str) -> None:
-        if not self._run_cpu:
-            self._say("  no cpu samples in this run: docker stats were not read", style=_SOFT)
-            return
-        for line in cpu_chart(self._run_cpu, self._windows, self._reply_width(), _CPU_ROWS):
-            self._say(line)
-
     def _command_log(self, arg: str) -> None:
         frame = self.query_one("#frame")
         if self._trade_off is None or not (self._decided or self.choices.waiting):
@@ -994,7 +973,6 @@ class BedlamApp(App[int]):
 
     def _on_injecting(self, fields: dict[str, Any]) -> None:
         self._fault, self._blast = fields["fault"], fields["blast_radius"]
-        self._windows.append(FaultWindow(len(self._run_cpu), None, f"R{self._cycle} {self._fault}"))
         blast = ", ".join(self._blast)
         self._say(f"injecting {self._fault}, blast radius {blast}", style=f"bold {DAMAGE}")
 
@@ -1042,8 +1020,6 @@ class BedlamApp(App[int]):
         self._probing_since = None
         self._health = fields["snapshot"]
         self._fault, self._blast = None, []
-        if self._windows and self._windows[-1].end is None:
-            self._windows[-1].end = len(self._run_cpu)
         self._say("fault removed: " + self._health_line(), style=GO)
 
     def _on_analysed(self, fields: dict[str, Any]) -> None:
@@ -1189,6 +1165,23 @@ class BedlamApp(App[int]):
         for index, (text, style) in enumerate(self._page_rows):
             if self._page_shown(index):
                 page.write(_fitted(text, width, style))
+        self._field_key = None
+        height = page.scrollable_content_region.height
+        if not self._page_rows and not page.has_class("-field"):
+            # The field needs the log's padding: drop it, draw once laid out.
+            page.add_class("-field")
+            self.call_after_refresh(self._render_chrome)
+            return
+        # The field may use the log's whole content row: "│ ", 78, " │" at 82.
+        room = page.scrollable_content_region.width
+        if page.has_class("-field") and room > FIELD_WIDTH and height >= FIELD_MIN_HEIGHT:
+            left = " " * ((room - FIELD_WIDTH + 1) // 2)  # a space off the border
+            rows = min(height, FIELD_HEIGHT)
+            for _ in range((height - rows) // 2):
+                page.write(Text(""))
+            for line in postmortem_field(rows):
+                page.write(Text.assemble(left, line))
+            self._field_key = (width, height)
         title = "POST-MORTEM · /cycles to start, /help for the rest"
         if self._grep is not None:
             title = f"POST-MORTEM · /grep {self._grep} · /grep alone shows all"
@@ -1249,9 +1242,20 @@ class BedlamApp(App[int]):
             self._render_decided()
         elif self._trade_off is not None:
             self._render_trade_off()
+        self._refresh_field()
+
+    def _refresh_field(self) -> None:
+        """Redraw the empty reply log when its size changed, so the field
+        fits and centres in it."""
+        page = self.query_one("#postmortem", RichLog)
+        if self._page_rows or not page.display:
+            return
+        size = (_inner(page), page.scrollable_content_region.height)
+        if size != self._field_key:
+            self._redraw_page()
 
     def _render_trade_off(self) -> None:
-        """Both options with equal weight: same layout, same colours, A then B."""
+        """Both options with equal weight: two cards, same rows, same colours."""
         assert self._trade_off is not None
         panel = self.query_one("#tradeoff", Static)
         width = _inner(panel)
@@ -1260,45 +1264,54 @@ class BedlamApp(App[int]):
         body.append(fit(trade_off["axis"], width) + "\n", style=f"bold {ACCENT}")
         for line in textwrap.wrap(trade_off["why"], width=width):
             body.append(line + "\n", style=_SOFT)
-        badge = f"bold {_BACKGROUND} on {GO}" if self.choices.waiting else f"{_TEXT} on {MUTED}"
-        for item in trade_off["options"]:
+        body.append("\n")
+        for line in option_cards(trade_off["options"], width, waiting=self.choices.waiting):
+            body.append_text(line)
             body.append("\n")
-            body.append(f" {item['key'].upper()} ", style=badge)
-            body.append(" " + fit(item["title"], width - 4) + "\n", style="bold")
-            for label, text in (("you gain", item["gain"]), ("you pay", item["cost"])):
-                lines = textwrap.wrap(text, width=width - _SIDE_INDENT) or [""]
-                for i, line in enumerate(lines):
-                    head = f"    {label:<9} " if i == 0 else " " * _SIDE_INDENT
-                    body.append(head, style=_SOFT)
-                    body.append(line + "\n", style=GO if label == "you gain" else DAMAGE)
-            # When the cost is felt and the fault that shows it: one line, so
-            # the longest trade-off still fits at 82 x 30. At most 74 columns.
-            body.append(f"    {'felt when':<9} ", style=_SOFT)
-            body.append(item["felt_when"], style=DAMAGE)
-            live = f" · shown live as {item['consequence']['id']}"
-            body.append(
-                fit(live, width - _SIDE_INDENT - len(item["felt_when"])) + "\n", style=_SOFT
-            )
-        # The post-mortem strip, when the options leave room for it.
+        # How you got here, while the screen has room for it and the replies.
+        recap = self._recap(width)
         strip = self.query_one("#postmortem", RichLog)
-        room = panel.outer_size.height + (strip.outer_size.height if strip.display else 0)
-        fits = room - body.plain.count("\n") - 2 >= _STRIP_ROWS
-        panel.styles.height = "1fr"
-        strip.styles.height = _STRIP_ROWS
+        # The panel and the replies share what the fixed rows leave.
+        fixed = sum(self.query_one(f"#{name}").outer_size.height for name in _FIXED_ROWS)
+        room = self.query_one("#frame").size.height - fixed
+        used = body.plain.count("\n") + 2
+        if recap and used + 1 + len(recap) + _STRIP_ROWS <= room:
+            body.append("\n")
+            for line in recap:
+                body.append_text(line)
+                body.append("\n")
+            used += 1 + len(recap)
+        body.rstrip()
+        fits = room - used >= _STRIP_ROWS
+        strip.styles.height = "1fr"
         panel.border_subtitle = "" if fits else "replies: /log"
         if strip.display != fits:
             strip.display = fits
             self.call_after_refresh(self._render_chrome)
-        # The run so far, in whatever height the options leave. Real samples
-        # only: without any, there is no chart.
-        spare = panel.content_region.height - body.plain.count("\n")
-        if self._run_cpu and spare >= _CHART_FRAME + len(Layer):
-            rows = min(_CHART_MAX_ROWS, (spare - _CHART_FRAME) // len(Layer))
-            body.append("\n")
-            for line in cpu_chart(self._run_cpu, self._windows, width, rows):
-                body.append_text(line)
-                body.append("\n")
         panel.update(body)
+
+    def _recap(self, width: int) -> list[Text]:
+        """How you got here: one line per round, the fault and whether the
+        patch held under it, measured."""
+        lines = [Text("how you got here", style="bold")] if self._cycles else []
+        for cycle, steps in sorted(self._cycles.items()):
+            fault = steps.get("injecting", {}).get("fault")
+            if fault is None:
+                continue
+            line = Text(f"  R{cycle}  {fault:<21} ", style=_SOFT)
+            check = steps.get("patch_checked", {}).get("check")
+            if check is None:
+                symptom = steps.get("symptom", {}).get("symptom")
+                line.append(f"symptom {symptom['kind']}" if symptom else "no check", style=_SOFT)
+            else:
+                before = AppResult.from_dict(check["before"])
+                after = AppResult.from_dict(check["after"])
+                line.append(f"{before.text()} → {after.text()}  ", style=_SOFT)
+                verdict = "held" if check["held"] else "did not hold"
+                line.append(verdict, style=f"bold {GO if check['held'] else DAMAGE}")
+            line.truncate(width)
+            lines.append(line)
+        return lines if len(lines) > 1 else []
 
     def _render_decided(self) -> None:
         """The trade-off page once the run is over: the choice, its cost, the record."""
@@ -1314,18 +1327,15 @@ class BedlamApp(App[int]):
         chosen = self._run_events["chosen"]["choice"]
         body = Text()
         body.append(fit(self._trade_off["axis"], width) + "\n", style=f"bold {ACCENT}")
-        for item in self._trade_off["options"]:
-            mine = item["key"] == chosen
-            badge = f"bold {_BACKGROUND} on {GO}" if mine else f"{_TEXT} on {MUTED}"
-            mark = "  ◀ you chose this" if mine else ""
-            body.append(f" {item['key'].upper()} ", style=badge)
-            room = width - 4 - len(mark)
-            body.append(" " + fit(item["title"], room), style="bold" if mine else _SOFT)
-            body.append(mark + "\n", style=f"bold {GO}")
+        for line in option_cards(self._trade_off["options"], width, chosen=chosen):
+            body.append_text(line)
+            body.append("\n")
         shown = self._run_events.get("cost_shown")
         showing = self._run_events.get("showing_cost")
         if shown is not None and showing is not None:
-            cost = f"cost shown live: {showing['fault']} · {_health_text(shown['snapshot'])}"
+            before = self._cycles.get(max(self._cycles, default=0), {}).get("fault_removed")
+            readings = (before, shown, self._run_events.get("cost_removed"))
+            cost = f"the cost, live: {showing['fault']} · {_cost_text(showing['layer'], readings)}"
             body.append(fit(cost, width) + "\n", style=DAMAGE)
         if self.decision_file is not None:
             record = f"decision record: {_shown_path(self.decision_file)}"
@@ -1399,11 +1409,9 @@ class BedlamApp(App[int]):
             await asyncio.sleep(_STATS_PAUSE_S)
 
     def record_load(self, load: dict[Layer, ContainerStats]) -> None:
-        """Keep one CPU sample: for the sparklines and the run-so-far chart."""
+        """Keep one CPU sample for the sparklines."""
         for layer, stats in load.items():
             self._cpu[layer].append(stats.cpu_percent)
-        if len(self._run_cpu) < _RUN_SAMPLES:
-            self._run_cpu.append({layer: stats.cpu_percent for layer, stats in load.items()})
 
     def _load_text(self, layer: Layer) -> str | None:
         load = self._load.get(layer)
@@ -1437,8 +1445,12 @@ class BedlamApp(App[int]):
         if self._replying is not None:
             self._replying.append(str(text))
             if self._on_page():
-                self._page_rows.append((text, style))
                 page = self.query_one("#postmortem", RichLog)
+                if page.has_class("-field"):  # the first reply takes the field's place
+                    page.clear()
+                    page.remove_class("-field")
+                    self._field_key = None
+                self._page_rows.append((text, style))
                 page.write(_fitted(text, _inner(page), style))
                 return
         tag = "tf" if self._escalated else f"c{self._cycle}" if self._cycle else "--"
@@ -1522,62 +1534,6 @@ def sparkline(values: deque[float] | list[float]) -> str:
     return "".join(_SPARK[min(len(_SPARK) - 1, int(v / top * len(_SPARK)))] for v in values)
 
 
-def cpu_chart(
-    samples: list[dict[Layer, float]], windows: list[FaultWindow], width: int, rows: int
-) -> list[Text]:
-    """CPU per container over the whole run, fault windows marked, in `width` columns.
-
-    The samples stretch or squeeze to fill the columns; a column covering
-    several samples shows their peak, so a spike is never averaged away.
-    One scale for all containers: 100% (one full core) or the run's peak.
-    """
-    cols = width - _CHART_LABEL
-    n = len(samples)
-    spans = [range(c * n // cols, max(c * n // cols + 1, (c + 1) * n // cols)) for c in range(cols)]
-    top = max(100.0, *(v for sample in samples for v in sample.values()))
-
-    def window_of(column: int) -> int | None:
-        first = spans[column].start
-        for i, window in enumerate(windows):
-            end = window.end if window.end is not None else n
-            if window.start <= first < end:
-                return i
-        return None
-
-    owner = [window_of(c) for c in range(cols)]
-    title = "THE RUN SO FAR · cpu per container, docker stats, 100% = one core"
-    lines = [Text(f"{fit(title, width):<{width}}", style=_SOFT)]
-    labels = Text(" " * _CHART_LABEL)
-    c = 0
-    while c < cols:
-        if owner[c] is None:
-            labels.append(" ")
-            c += 1
-            continue
-        span = 1
-        while c + span < cols and owner[c + span] == owner[c]:
-            span += 1
-        labels.append(f"{windows[owner[c]].label[:span]:<{span}}", style=f"bold {DAMAGE}")
-        c += span
-    lines.append(labels)
-    for layer in Layer:
-        # Eighths of a cell: an idle container still shows its baseline.
-        levels = [
-            max(1, round(max(samples[i].get(layer, 0.0) for i in span) / top * rows * 8))
-            for span in spans
-        ]
-        for row in range(rows):
-            floor = (rows - 1 - row) * 8
-            line = Text(f"{layer.value:<{_CHART_LABEL}}" if row == rows - 1 else " " * _CHART_LABEL)
-            line.stylize(_SOFT)
-            for column, level in enumerate(levels):
-                fill = min(8, level - floor)
-                cell = _SPARK[fill - 1] if fill > 0 else " "
-                line.append(cell, style=f"dim {DAMAGE}" if owner[column] is not None else MUTED)
-            lines.append(line)
-    return lines
-
-
 def _memory(size: int) -> str:
     """Bytes in four characters or so: 3.8M, 220M, 1.2G."""
     for unit, scale in (("G", 1024**3), ("M", 1024**2), ("K", 1024)):
@@ -1658,6 +1614,119 @@ def _clip(text: str, width: int) -> str:
     return text if len(text) <= width else text[: width - 1] + "…"
 
 
+FIELD_WIDTH: Final = 78
+FIELD_HEIGHT: Final = 14
+# Below this the band crowds the labels and turns into a blob.
+FIELD_MIN_HEIGHT: Final = 7
+
+
+@functools.cache
+def postmortem_field(height: int = FIELD_HEIGHT) -> tuple[Text, ...]:
+    """The post-mortem field: a thin band rising from A to B, abstract, no
+    figures. Each cell's shade is a gaussian of its distance from one line;
+    only two shades, so it reads as a band and not a blob (27% ink). Drawn
+    for 14 rows; a shorter log gets the same band, its line and width
+    scaled to the rows it has."""
+    k = height / FIELD_HEIGHT
+    (x1, y1), (x2, y2), sigma = (6.0, 10.5 * k), (72.0, 3.0 * k), max(0.6, 1.25 * k)
+    dx, dy = x2 - x1, y2 - y1
+    rows = []
+    for row in range(height):
+        cells = []
+        for col in range(FIELD_WIDTH):
+            t = ((col - x1) * dx + (row - y1) * dy) / (dx * dx + dy * dy)
+            dist2 = (col - x1 - t * dx) ** 2 + (row - y1 - t * dy) ** 2
+            density = math.exp(-dist2 / (2 * sigma * sigma))
+            cells.append("▒" if density >= 0.72 else "░" if density >= 0.30 else " ")
+        rows.append(cells)
+    labels = {16: "A", 61: "B"}
+    for col in labels:  # cleared first, or the band swallows the letter
+        rows[-1][col - 2 : col + 3] = [" "] * 5
+    lines = []
+    for index, cells in enumerate(rows):
+        line = Text()
+        for col, cell in enumerate(cells):
+            label = labels.get(col) if index == height - 1 else None
+            line.append(label or cell, style=_SOFT if label else _FIELD_INK)
+        lines.append(line)
+    return tuple(lines)
+
+
+def option_cards(
+    options: list[dict[str, Any]], width: int, *, waiting: bool = False, chosen: str | None = None
+) -> list[Text]:
+    """A and B as two cards side by side, their rows aligned so gain sits
+    beside gain and cost beside cost. While the choice waits both look the
+    same; once made, the chosen card is marked and the other dims."""
+    card_w = (width - 1) // 2
+    text_w = card_w - _CARD_FRAME - _CARD_LABEL
+    rows = ("title", "gain", "pay", "felt", "live")
+
+    def cells(item: dict[str, Any]) -> dict[str, list[str]]:
+        return {
+            "title": textwrap.wrap(item["title"], card_w - _CARD_FRAME) or [""],
+            "gain": textwrap.wrap(item["gain"], text_w) or [""],
+            "pay": textwrap.wrap(item["cost"], text_w) or [""],
+            "felt": textwrap.wrap(item["felt_when"], text_w) or [""],
+            "live": textwrap.wrap(item["consequence"]["id"], text_w) or [""],
+        }
+
+    wrapped = [cells(item) for item in options]
+    heights = {row: max(len(c[row]) for c in wrapped) for row in rows}
+    colours = {"gain": GO, "pay": DAMAGE, "felt": DAMAGE, "live": _SOFT}
+
+    def card(item: dict[str, Any], cell: dict[str, list[str]], w: int) -> list[Text]:
+        # Both cards wrap at the same width, so their rows align; a card
+        # given an odd spare column pads to it.
+        spare = w - card_w
+        key = item["key"]
+        mine = chosen is not None and key == chosen
+        dim = chosen is not None and not mine
+        edge = GO if mine else MUTED if dim else ACCENT
+        top = f"┌─ {key.upper()} "
+        out = [Text(top + "─" * (w - len(top) - 1) + "┐", style=f"bold {edge}")]
+        for row in rows:
+            for i in range(heights[row]):
+                text = cell[row][i] if i < len(cell[row]) else ""
+                line = Text("│ ", style=edge)
+                if row == "title":
+                    line.append(f"{text:<{w - _CARD_FRAME}}", style=_SOFT if dim else "bold")
+                else:
+                    line.append(f"{row if i == 0 else '':<{_CARD_LABEL}}", style=_SOFT)
+                    line.append(f"{text:<{text_w + spare}}", style=_SOFT if dim else colours[row])
+                line.append(" │", style=edge)
+                out.append(line)
+        foot = (
+            "◀ you chose this"
+            if mine
+            else "not chosen"
+            if dim
+            else f"press {key.upper()}"
+            if waiting
+            else ""
+        )
+        tail = f"─ {foot} " if foot else ""
+        out.append(Text("└" + tail + "─" * (w - len(tail) - 2) + "┘", style=edge))
+        return out
+
+    first, second = options
+    left = card(first, wrapped[0], card_w)
+    right = card(second, wrapped[1], width - 1 - card_w)
+    return [Text.assemble(a, " ", b) for a, b in zip(left, right, strict=True)]
+
+
+def _cost_text(layer: str, readings: tuple[dict[str, Any] | None, ...]) -> str:
+    """`cache 15ms → 2513ms → 15ms`: the layer the cost hit, before, under
+    the cost and after, from whichever readings exist."""
+    shown = []
+    for event in readings:
+        reading = (event or {}).get("snapshot", {}).get(layer)
+        if reading is not None:
+            latency = reading.get("latency_ms")
+            shown.append(f"{latency:.0f}ms" if latency is not None else reading["status"])
+    return f"{layer} " + " → ".join(shown)
+
+
 def _check_text(check: dict[str, Any]) -> str:
     """`hung 6000ms → answered in 180ms · patch held`, from a patch check."""
     before, after = AppResult.from_dict(check["before"]), AppResult.from_dict(check["after"])
@@ -1715,6 +1784,8 @@ def main(argv: list[str] | None = None) -> int:
     app.decision_file = decision_path(trace_path)
     app.trace_file = trace_path
     with scripted or contextlib.nullcontext():
+        if scripted is not None:
+            scripted.settle()
         app.run()
     return app.exit_code if app.exit_code is not None else 1
 

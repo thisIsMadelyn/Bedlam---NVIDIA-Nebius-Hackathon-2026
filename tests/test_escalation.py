@@ -6,9 +6,10 @@ import asyncio
 from pathlib import Path
 from typing import Any
 
+import pytest
 from fakes import FakeTransport, answer_tradeoff_escalation, plausible_model
 from test_loop import _run_once
-from test_tui import SIZE, WIDE, _app
+from test_tui import SIZE, _app
 
 from bedlam.escalation import ScriptedChoice, decision_record, escalate
 from bedlam.faults.primitives import FaultKind
@@ -17,9 +18,8 @@ from bedlam.history import FaultRecord
 from bedlam.models.client import ModelClient
 from bedlam.models.map import CallSite
 from bedlam.patches import ScriptedPatchSource
-from bedlam.stats import ContainerStats
 from bedlam.topology import Layer
-from bedlam.tui import LINE, BedlamApp, FaultWindow, GatedChoice, cpu_chart
+from bedlam.tui import BedlamApp, GatedChoice, option_cards, postmortem_field
 
 _HISTORY = [
     FaultRecord(1, "db.latency.2500", Layer.DB, FaultKind.LATENCY, "db"),
@@ -178,12 +178,18 @@ def test_the_trade_off_takes_the_frame_and_fits_at_82_columns() -> None:
             assert " A  option A" in rows[-1] and " P " not in rows[-1], "keys not lit"
             panel = "\n".join(rows)
             for text in (
-                " A  Fail fast",
-                " B  Wait it out",
-                "you gain",
-                "you pay",
-                "felt when db is slow · shown live as db.latency.2500",
-                "felt when db hangs · shown live as db.timeout.0",
+                "┌─ A ",
+                "┌─ B ",
+                "Fail fast",
+                "Wait it out",
+                "│ gain  ",
+                "│ pay   ",
+                "felt  db is slow",
+                "felt  db hangs",
+                "live  db.latency.2500",
+                "live  db.timeout.0",
+                "└─ press A ",
+                "└─ press B ",
             ):
                 assert text in panel, text
             assert "…" not in panel.split("TRADE-OFF", 1)[1], "a trade-off line was cut"
@@ -232,67 +238,127 @@ def test_the_longest_trade_off_the_parser_allows_still_fits_at_82() -> None:
             await pilot.pause(0.2)
             rows = [s.text for s in app.screen._compositor.render_strips()]
             panel = rows[[i for i, r in enumerate(rows) if "TRADE-OFF" in r][0] :]
-            assert sum("shown live as" in r for r in panel) == 2, "option B cut off"
+            shown = "\n".join(panel)
+            assert shown.count("live  cache.timeout.3000") == 2, "a card was cut"
+            assert shown.count("└─") == 2, "a card lost its foot"
             assert "…" not in "".join(panel)
 
     asyncio.run(scenario())
 
 
-def _samples(n: int, db: float = 2.0) -> list[dict[Layer, float]]:
-    return [{Layer.API: 10.0, Layer.DB: db, Layer.CACHE: 1.0} for _ in range(n)]
+TRADE_OFF_FIELDS = {
+    "axis": "fail fast vs wait it out",
+    "why": "both rounds hit how the app treats a late db",
+    "options": [
+        {
+            "key": "a",
+            "title": "Fail fast",
+            "gain": "a hung dependency costs one quick error, not a stuck request",
+            "cost": "errors whenever it is merely slow",
+            "felt_when": "db is slow",
+            "consequence": {"id": "db.latency.2500"},
+        },
+        {
+            "key": "b",
+            "title": "Wait it out",
+            "gain": "a slow dependency still answers",
+            "cost": "requests pile up when it hangs",
+            "felt_when": "db hangs",
+            "consequence": {"id": "db.timeout.0"},
+        },
+    ],
+}
 
 
-def test_the_cpu_chart_fills_its_width_and_keeps_a_spike() -> None:
-    for n in (3, 70, 500):
-        samples = _samples(n)
-        samples[n // 2][Layer.DB] = 95.0  # one spike, whatever the squeeze
-        windows = [FaultWindow(n // 3, 2 * n // 3, "R1 db.timeout.0")]
-        lines = cpu_chart(samples, windows, LINE, rows=2)
-        assert all(len(line.plain) == LINE for line in lines), n
-        assert len(lines) == 2 + 2 * len(Layer)
-        db_top = lines[2 + 2].plain  # top row of db: api is first
-        assert "█" in db_top or "▇" in db_top, f"spike lost at {n} samples"
-        assert "R1 db" in lines[1].plain
+def test_the_cards_line_their_rows_up_side_by_side_and_fill_the_width() -> None:
+    lines = option_cards(TRADE_OFF_FIELDS["options"], 78, waiting=True)
+    plain = [line.plain for line in lines]
+    assert all(len(row) == 78 for row in plain)
+    left = [row[:38] for row in plain]
+    right = [row[39:] for row in plain]
+    for label in ("gain", "pay", "felt", "live"):
+        rows = [i for i, row in enumerate(left) if row.startswith(f"│ {label} ")]
+        assert rows == [i for i, row in enumerate(right) if row.startswith(f"│ {label} ")], label
 
 
-def test_the_run_so_far_fills_the_spare_height_under_the_trade_off() -> None:
-    trade_off = {
-        "axis": "fail fast vs wait it out",
-        "why": "both rounds hit how the app treats a late db",
-        "options": [
-            {
-                "key": k,
-                "title": t,
-                "gain": "something",
-                "cost": "something else",
-                "felt_when": "db hangs",
-                "consequence": {"id": "db.timeout.0"},
-            }
-            for k, t in (("a", "Fail fast"), ("b", "Wait it out"))
-        ],
-    }
-    load = {layer: ContainerStats(5.0, 1 << 20) for layer in Layer}
+def test_while_the_choice_waits_both_cards_look_the_same() -> None:
+    lines = option_cards(TRADE_OFF_FIELDS["options"], 78, waiting=True)
+    top = lines[0]
+    styles = {str(span.style) for span in top.spans}
+    assert len(styles) == 1, "one card is styled differently: a recommendation"
+    assert "◀" not in "".join(line.plain for line in lines)
 
-    async def scenario(size: tuple[int, int], samples: bool) -> list[str]:
+
+def test_once_chosen_the_card_is_marked_and_the_other_dims() -> None:
+    lines = option_cards(TRADE_OFF_FIELDS["options"], 78, chosen="b")
+    foot = lines[-1].plain
+    assert foot.index("not chosen") < foot.index("◀ you chose this")
+    left_edge, right_edge = (str(span.style) for span in lines[0].spans[:2])
+    assert left_edge != right_edge
+
+
+def test_the_replies_get_every_row_the_cards_leave() -> None:
+    async def scenario(size: tuple[int, int]) -> tuple[int, list[str]]:
         app = BedlamApp(1729, ScriptedPatchSource(), lambda app: asyncio.sleep(3600))
         async with app.run_test(size=size) as pilot:
-            if samples:
-                for i in range(40):
-                    if i == 10:
-                        app._cycle = 1
-                        app._on_injecting({"fault": "db.timeout.0", "blast_radius": ["api", "db"]})
-                    if i == 20:
-                        app._on_fault_removed({"snapshot": {}})
-                    app.record_load(load)
-            app.on_loop_event("trade_off", {"trade_off": trade_off})
+            for cycle, fault in ((1, "db.timeout.0"), (2, "cache.connection_cut")):
+                app._cycles[cycle] = {"injecting": {"fault": fault}}
+            app.on_loop_event("trade_off", {"trade_off": TRADE_OFF_FIELDS})
             await pilot.pause(0.2)
+            await pilot.pause(0.2)
+            strip = app.query_one("#postmortem")
             rows = [s.text for s in app.screen._compositor.render_strips()]
             assert all(len(row) == size[0] for row in rows)
-            return rows
+            return (strip.size.height if strip.display else 0), rows
 
-    tall = asyncio.run(scenario(WIDE, samples=True))
-    assert any("THE RUN SO FAR" in r for r in tall)
-    assert any("R1 db.timeout.0" in r for r in tall)
-    assert "…" not in "".join(tall).split("TRADE-OFF", 1)[1]
-    # No samples (no Docker): no chart, never a made-up one.
-    assert not any("THE RUN SO FAR" in r for r in asyncio.run(scenario(WIDE, samples=False)))
+    small, rows = asyncio.run(scenario(SIZE))
+    assert small >= 3, "at 82 x 30 the replies still show"
+    tall, rows = asyncio.run(scenario((SIZE[0], 45)))
+    assert tall >= 12, "a taller screen goes to the replies, not the cards"
+    assert any("how you got here" in row for row in rows)
+    assert any("R2  cache.connection_cut" in row for row in rows)
+
+
+def test_the_field_is_a_thin_band_from_a_to_b_in_two_shades() -> None:
+    plain = [line.plain for line in postmortem_field()]
+    assert len(plain) == 14 and all(len(row) == 78 for row in plain)
+    cells = "".join(plain)
+    assert set(cells) <= {" ", "░", "▒", "A", "B"}, "only two shades, never a blob"
+    ink = sum(c in "░▒" for c in cells) / len(cells)
+    assert 0.25 <= ink <= 0.30
+    assert plain[-1][16] == "A" and plain[-1][61] == "B"
+    assert plain[-1][14:19] == "  A  " and plain[-1][59:64] == "  B  ", "labels kept clear"
+    assert plain[3].rstrip().endswith("▒") and plain[10].startswith("░░▒"), "it rises A to B"
+
+
+def test_the_field_fills_the_empty_replies_and_the_first_reply_takes_its_place() -> None:
+    async def scenario(size: tuple[int, int]) -> tuple[list[str], list[str], bool]:
+        app = BedlamApp(1729, ScriptedPatchSource(), lambda app: asyncio.sleep(3600))
+        async with app.run_test(size=size) as pilot:
+            app.on_loop_event("trade_off", {"trade_off": TRADE_OFF_FIELDS})
+            for _ in range(3):
+                await pilot.pause(0.2)
+            before = [s.text for s in app.screen._compositor.render_strips()]
+            await pilot.press("slash", *"cycles", "enter")
+            await pilot.pause(0.3)
+            after = [s.text for s in app.screen._compositor.render_strips()]
+            return before, after, app.query_one("#postmortem").has_class("-field")
+
+    before, after, field_left = asyncio.run(scenario((82, 45)))
+    band = [row for row in before if "▒" in row]
+    assert band, "the field should show in the empty replies"
+    assert all(len(row) == 82 for row in before)
+    assert any(row.startswith("│ ░░") or row.startswith("│ ▒▒") for row in before), "│ + space"
+    assert not any("▒" in row for row in after) and not field_left, "a reply replaces it"
+    small, _, _ = asyncio.run(scenario((82, 30)))
+    assert not any("▒" in row for row in small), "5 rows cannot hold a 14-row field"
+
+
+@pytest.mark.parametrize("rows", [7, 8, 11])
+def test_a_shorter_log_gets_the_same_band_scaled(rows: int) -> None:
+    plain = [line.plain for line in postmortem_field(rows)]
+    assert len(plain) == rows and all(len(row) == 78 for row in plain)
+    ink = sum(c in "░▒" for c in "".join(plain)) / (78 * rows)
+    assert 0.24 <= ink <= 0.33
+    assert plain[-1][16] == "A" and plain[-1][61] == "B"
+    assert plain[-1][14:19] == "  A  " and plain[-1][59:64] == "  B  "
