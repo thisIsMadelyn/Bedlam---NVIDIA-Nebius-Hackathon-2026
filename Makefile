@@ -18,8 +18,9 @@ up:
 down:
 	docker compose down -v
 
+# SEED=1729 picks the root seed; without it, BEDLAM_SEED or the default.
 run:
-	python -m bedlam.tui
+	python -m bedlam.tui $(if $(SEED),--seed $(SEED))
 
 headless:
 	python -m bedlam.loop --headless
