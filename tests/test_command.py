@@ -6,7 +6,7 @@ import asyncio
 
 import pytest
 from test_tui import SIZE, WIDE, _app, _drive
-from textual.widgets import Input, RichLog
+from textual.widgets import Input, RichLog, Static
 
 from bedlam.patches import ScriptedPatchSource
 from bedlam.topology import Layer
@@ -397,5 +397,17 @@ def test_while_choosing_the_strip_takes_replies_when_there_is_room() -> None:
             assert app.choices.waiting, "a command made the choice"
             await pilot.press("a")
             await pilot.pause(0.3)
+
+    asyncio.run(scenario())
+
+
+def test_once_the_run_is_over_the_footer_offers_no_p() -> None:
+    async def scenario() -> None:
+        app = _app()
+        async with app.run_test(size=SIZE) as pilot:
+            assert " P " in str(app.query_one("#footer", Static).render())
+            await _drive(app, pilot)
+            footer = str(app.query_one("#footer", Static).render())
+            assert " P " not in footer and " Q " in footer and " / " in footer
 
     asyncio.run(scenario())

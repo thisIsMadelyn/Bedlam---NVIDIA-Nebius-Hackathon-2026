@@ -1182,7 +1182,7 @@ class BedlamApp(App[int]):
             for key in KEYS:
                 keys.append(f" {key.upper()} ", style=lit)
                 keys.append(f" option {key.upper()}    ", style=f"bold {GO}")
-        else:
+        elif self.exit_code is None:  # P means nothing once the run is over
             keys.append(" P ", style=lit if now.your_turn else f"{_TEXT} on {MUTED}")
             action = " read my fix    " if self.real else " apply the prepared fix    "
             keys.append(action, style=f"bold {GO}" if now.your_turn else _SOFT)
