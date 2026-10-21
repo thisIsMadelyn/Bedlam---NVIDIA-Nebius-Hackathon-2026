@@ -23,6 +23,53 @@ badges of either kind.
 
 ---
 
+## Session [2026-10-21-2230]
+
+- **Start status:** `a2f1275`, working tree clean, 145 tests passing.
+  Phases 1–4 complete; Phase 5 (rehearsal and freeze) not started. The
+  developer's patch was only read, never run; scripted mode applied one
+  fixed diff per round; routing evidence was behind `/why`; the trade-off
+  page stacked A and B over a CPU chart.
+- **End status:** `88b861a` plus this entry, working tree clean, 184 tests
+  passing, lint and format clean. Replay fixture re-recorded with `make
+  record`; the replay test passes. Containers down. First thing next
+  session: the dim field on the trade-off page shows after the choice
+  instead of while the choice waits. Still open: the Phase 5 runs (three
+  clean in a row, a fresh clone elsewhere); feature freeze Mon 26 Oct.
+- **Badges:**
+  - 🆕 Addition — The patch runs: the target's source is mounted into the
+    api container; after a patch Bedlam removes the fault, restarts the
+    api with the patch, injects the same fault again and reads through
+    the app (Redis session, Postgres user and tiers). Before and after are
+    shown with a held verdict: hanging or erroring to answering, a hang or
+    slow answer at least twice as fast; a faster error never counts.
+    `make up` seeds the admin the probe signs in as. `docs/live-patch.md`.
+  - 🆕 Addition — Prepared fix library: scripted mode applies the fix for
+    the live fault (db-fallback, db-failfast, session-cache), built from
+    one-file pieces that stack across rounds. All 12 catalog faults held
+    against their fix in a live check.
+  - 🆕 Addition — The Tavily routing on screen each cycle: results with
+    Nano's labels, scores and sources, a bar per layer of the summed
+    scores, the winning specialist and the basis, honest about fallbacks.
+  - 🆕 Addition — Trade-off page redesign: A and B as two cards with
+    aligned rows, identical while waiting; "how you got here" with each
+    round's patch verdict; the panel takes only the rows it needs, the
+    replies get the rest; a dim field (a band rising from A to B) in the
+    empty reply log. The CPU chart and `/cpu` are removed.
+  - 🆕 Addition — Planned: a developer manual (Phase 6).
+  - 🐛 Bug fix — A reload under a db fault failed at startup and left the
+    api down into the next cycle; the api now restarts on a healthy stack.
+  - 🐛 Bug fix — Scripted fixes failed to apply on a fresh Windows clone
+    with autocrlf on ("patch does not apply"); the diff now follows the
+    patched file's line endings.
+  - 🐛 Bug fix — After a killed TUI run, the next run's cleanup restarted
+    the api under the baseline probe ("layers down before any fault");
+    the run now waits for the api first.
+  - 🐛 Bug fix — The admin seed was silently skipped: the boilerplate's
+    example password fails its own password policy.
+
+---
+
 ## Session [2026-10-21-1737]
 
 - **Start status:** `84a89e6`, working tree clean, 122 tests passing.
