@@ -139,6 +139,10 @@ QUOTES: Final[dict[str, str]] = {
 MORAL: Final = "it was never stable. you just stopped looking."
 SIGN_OFF: Final = "same time next sprint."
 
+# /sudo, the command /help never lists. It runs nothing.
+SUDO: Final = "you are not in the sudoers file. this incident will be reported."
+SUDO_CHOOSE: Final = "nice try. even root can't make this choice for you."
+
 
 def _refine(kind: str, fields: dict[str, Any]) -> tuple[str | None, dict[str, Any]]:
     """The specific key for this event and the values its templates use."""

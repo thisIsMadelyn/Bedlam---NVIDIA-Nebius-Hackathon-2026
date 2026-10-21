@@ -39,6 +39,7 @@ from textual import events
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.css.query import NoMatches
+from textual.suggester import SuggestFromList
 from textual.widget import Widget
 from textual.widgets import Input, RichLog, Static
 
@@ -77,7 +78,7 @@ from bedlam.search.tavily import SearchCall, SearchClient
 from bedlam.stats import ContainerStats, StatsUnavailable
 from bedlam.stats import sample as sample_stats
 from bedlam.topology import Layer
-from bedlam.voice import MORAL, SIGN_OFF, Voice, event_key
+from bedlam.voice import MORAL, SIGN_OFF, SUDO, SUDO_CHOOSE, Voice, event_key
 
 # The minimum width. Every template is checked to fit at this size.
 WIDTH: Final = 82
@@ -242,10 +243,26 @@ COMMANDS: Final = {
     "why": "why this layer: Tavily weights and the results behind them",
     "diff": "what Bedlam read in your last patch",
     "seed": "the root seed, and how to run this again",
+    "grep": "show only timeline lines with <text>; /grep alone shows all",
+    "zoom": "one log fills the screen: /zoom timeline|agent, /zoom ends it",
+    "copy": "copy the last command's output; /copy timeline: what's shown",
+    "save": "write the timeline and the model log to a text file",
+    "shot": "save a screenshot of the screen as SVG",
     "patch": "hand over your fix, same as P",
     "choose": "your side of the trade-off: /choose a or /choose b",
     "quit": "leave Bedlam, same as Q",
 }
+# The logs /zoom can fill the screen with.
+ZOOMS: Final = ("timeline", "agent")
+# What Tab completes in the command line: every command, then the
+# arguments that have a fixed set of values.
+_COMPLETIONS: Final = [
+    *(f"/{name}" for name in COMMANDS),
+    *(f"/zoom {log}" for log in ZOOMS),
+    "/copy timeline",
+    "/choose a",
+    "/choose b",
+]
 
 
 class BedlamApp(App[int]):
@@ -274,6 +291,8 @@ class BedlamApp(App[int]):
     #tradeoff {{ display: none; height: 1fr; border: heavy {GO}; }}
     #frame.-escalation #tradeoff {{ display: block; }}
     #frame.-escalation #system, #frame.-escalation #body {{ display: none; }}
+    #frame.-zoomed #system {{ display: none; }}
+    #body.-zoom-timeline #agent, #body.-zoom-agent #timeline {{ display: none; }}
     #body {{ height: 1fr; }}
     #timeline {{ height: 2fr; min-height: 6; }}
     #agent {{ height: 1fr; min-height: 9; }}
@@ -303,6 +322,8 @@ class BedlamApp(App[int]):
     # The logs hold focus so P and Q work as keys; "/" moves to the command
     # line, and Enter or Esc gives focus back.
     AUTO_FOCUS = "#timeline"
+    # "/" is the only way into a command line: Textual's own palette is off.
+    ENABLE_COMMAND_PALETTE = False
 
     def __init__(
         self,
@@ -359,6 +380,16 @@ class BedlamApp(App[int]):
         self._routed: dict[str, Any] | None = None
         self._patch: dict[str, Any] | None = None
         self._analysis: dict[str, Any] | None = None
+        # /grep's text, None when the timeline shows everything. Rows a
+        # command echoed or replied with are pinned: a filter never hides them.
+        self._grep: str | None = None
+        self._pinned: set[int] = set()
+        self._replying = False
+        # What the last command said, for /copy.
+        self._last_reply: list[str] = []
+        self._shots = 0
+        # Where the run's trace is written; /save and /shot write beside it.
+        self.trace_file: Path | None = None
         # Where the run's decision record is written, said once it exists.
         self.decision_file: Path | None = None
         self.exit_code: int | None = None
@@ -386,10 +417,11 @@ class BedlamApp(App[int]):
                 agent = RichLog(id="agent", classes="panel", wrap=False)
                 agent.border_title = f"{MODELS} · which model did each step"
                 yield agent
-            yield Input(
+            yield CommandLine(
                 id="command",
                 placeholder="press / to type a command, /help lists them",
                 select_on_focus=False,
+                suggester=SuggestFromList(_COMPLETIONS, case_sensitive=False),
             )
             yield Static(id="footer")
 
@@ -466,7 +498,8 @@ class BedlamApp(App[int]):
     def action_leave_command(self) -> None:
         line = self.query_one("#command", Input)
         line.value = ""
-        self.query_one("#timeline", RichLog).focus()
+        zoomed_agent = self.query_one("#body").has_class("-zoom-agent")
+        self.query_one("#agent" if zoomed_agent else "#timeline", RichLog).focus()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         text = event.value.strip()
@@ -474,12 +507,23 @@ class BedlamApp(App[int]):
         if not text:
             return
         name, *rest = text.lstrip("/").split(maxsplit=1) or [""]
-        self._say(f"you › {text}", style=f"bold {_TEXT}")
-        command = COMMANDS.get(name.lower())
-        if command is None:
-            self._say(f"unknown command /{name}. /help lists them", style=_SOFT)
-            return
-        getattr(self, f"_command_{name.lower()}")(rest[0].strip() if rest else "")
+        name, arg = name.lower(), rest[0].strip() if rest else ""
+        start = len(self._timeline_rows)
+        self._replying = True
+        try:
+            self._say(f"you › {text}", style=f"bold {_TEXT}")
+            if name == "sudo":
+                # Not in /help: an easter egg. It never runs what follows it.
+                line = SUDO_CHOOSE if arg.lower().startswith("choose") else SUDO
+                self._say(f"» {line}", style=_voice_style(False))
+            elif name in COMMANDS:
+                getattr(self, f"_command_{name}")(arg)
+            else:
+                self._say(f"unknown command /{name}. /help lists them", style=_SOFT)
+        finally:
+            self._replying = False
+        if name != "copy":
+            self._last_reply = [text for _, text, _ in self._timeline_rows[start + 1 :]]
 
     def _command_help(self, arg: str) -> None:
         for name, about in COMMANDS.items():
@@ -550,6 +594,77 @@ class BedlamApp(App[int]):
             "  live model replies can still vary; make test replays a run exactly",
         ):
             self._say(line, style=_SOFT)
+
+    def _command_grep(self, arg: str) -> None:
+        self._grep = arg.lower() or None
+        self._redraw_timeline()
+        if self._grep is not None:
+            hits = sum(
+                1
+                for i in range(len(self._timeline_rows))
+                if i not in self._pinned and self._shown(i)
+            )
+            self._say(f"  {hits} lines match. /grep alone shows all", style=_SOFT)
+
+    def _command_zoom(self, arg: str) -> None:
+        log = arg.lower()
+        if log and log not in ZOOMS:
+            self._say("zoom what? /zoom timeline or /zoom agent", style=_SOFT)
+            return
+        body = self.query_one("#body")
+        body.remove_class(*(f"-zoom-{name}" for name in ZOOMS))
+        self.query_one("#frame").set_class(bool(log), "-zoomed")
+        if log:
+            body.add_class(f"-zoom-{log}")
+        self.action_leave_command()
+        self.call_after_refresh(self._render_chrome)
+
+    def _command_copy(self, arg: str) -> None:
+        if arg.lower() == "timeline":
+            lines = [
+                f"{tag} {text}"
+                for i, (tag, text, _) in enumerate(self._timeline_rows)
+                if self._shown(i)
+            ]
+        elif arg:
+            self._say("copy what? /copy or /copy timeline", style=_SOFT)
+            return
+        else:
+            lines = self._last_reply
+        if not lines:
+            self._say("  nothing to copy yet", style=_SOFT)
+            return
+        self.copy_to_clipboard("\n".join(lines))
+        self._say(f"  copied {len(lines)} lines, if your terminal allows it", style=_SOFT)
+
+    def _command_save(self, arg: str) -> None:
+        if self.trace_file is None:
+            self._say("  this run has no trace file to save beside", style=_SOFT)
+            return
+        path = self.trace_file.with_suffix(".txt")
+        agent = [self._agent_line(*row, width=LINE).plain for row in self._agent_rows]
+        text = [
+            f"BEDLAM · seed {self.root_seed}",
+            "",
+            LOG,
+            *(f"{tag} {line}" for tag, line, _ in self._timeline_rows),
+            "",
+            MODELS,
+            *agent,
+        ]
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("\n".join(text) + "\n", encoding="utf-8")
+        self._say(f"  saved {_shown_path(path)}", style=_SOFT)
+
+    def _command_shot(self, arg: str) -> None:
+        if self.trace_file is None:
+            self._say("  this run has no trace file to save beside", style=_SOFT)
+            return
+        self._shots += 1
+        path = self.trace_file.with_name(f"{self.trace_file.stem}-shot{self._shots}.svg")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self.save_screenshot(filename=path.name, path=str(path.parent))
+        self._say(f"  saved {_shown_path(path)}", style=_SOFT)
 
     def _command_patch(self, arg: str) -> None:
         self.action_patch()
@@ -776,12 +891,21 @@ class BedlamApp(App[int]):
         if widths == self._flowed:
             return
         self._flowed = widths
-        timeline.clear()
-        for row in self._timeline_rows:
-            timeline.write(self._timeline_line(*row))
+        self._redraw_timeline()
         agent.clear()
         for row in self._agent_rows:
             agent.write(self._agent_line(*row, width=widths[1]))
+
+    def _redraw_timeline(self) -> None:
+        timeline = self.query_one("#timeline", RichLog)
+        timeline.clear()
+        for index, row in enumerate(self._timeline_rows):
+            if self._shown(index):
+                timeline.write(self._timeline_line(*row))
+        title = f"{LOG} · newest at the bottom"
+        if self._grep is not None:
+            title = f"{LOG} · /grep {self._grep} · /grep alone shows all"
+        timeline.border_title = fit(title, LINE)
 
     def _render_chrome(self) -> None:
         self._reflow()
@@ -977,13 +1101,33 @@ class BedlamApp(App[int]):
     def _say(self, text: str, style: str = "") -> None:
         tag = "tf" if self._escalated else f"c{self._cycle}" if self._cycle else "--"
         row = (tag, text, style)
+        if self._replying:
+            self._pinned.add(len(self._timeline_rows))
         self._timeline_rows.append(row)
-        self.query_one("#timeline", RichLog).write(self._timeline_line(*row))
+        if self._shown(len(self._timeline_rows) - 1):
+            self.query_one("#timeline", RichLog).write(self._timeline_line(*row))
+
+    def _shown(self, index: int) -> bool:
+        """Whether timeline row `index` passes /grep. Command rows always do."""
+        if self._grep is None or index in self._pinned:
+            return True
+        tag, text, _ = self._timeline_rows[index]
+        return self._grep in f"{tag} {text}".lower()
 
     def _timeline_line(self, cycle: str, text: str, style: str) -> Text:
         line = Text.assemble((f"{cycle} ", MUTED))
         line.append(fit(text, self._say_width()), style=style)
         return line
+
+
+class CommandLine(Input):
+    """The command line. Tab takes the grey completion; it never moves focus."""
+
+    BINDINGS = [("tab", "complete", "complete the command")]
+
+    def action_complete(self) -> None:
+        self.cursor_position = len(self.value)
+        self.action_cursor_right()
 
 
 class Splash(Static, can_focus=True):
@@ -1131,6 +1275,7 @@ def main(argv: list[str] | None = None) -> int:
         root_seed, patches, launch, real=not args.scripted, stats=sample_stats, splash_s=SPLASH_S
     )
     app.decision_file = decision_path(trace_path)
+    app.trace_file = trace_path
     app.run()
     return app.exit_code if app.exit_code is not None else 1
 

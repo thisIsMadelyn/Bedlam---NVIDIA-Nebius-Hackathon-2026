@@ -339,8 +339,19 @@ Raised 20 Oct. The command line landed with `/help`, `/patch`, `/choose` and
 - `/seed` — the root seed, the `make run SEED=…` rerun, and that only replays
   reproduce exactly (Token Factory varies at temperature 0)
 
+Also approved 21 Oct, for managing the output and layout:
+
+- Tab completes commands and their fixed arguments
+- `/grep <text>` — timeline shows only matching lines; command rows always show
+- `/zoom timeline|agent` — one log fills the screen; `/zoom` alone ends it
+- `/copy` — the last command's output, or `/copy timeline` for what is shown
+- `/save` — timeline and model log as text beside the trace
+- `/shot` — SVG screenshot beside the trace
+- `/sudo …` — hidden easter egg; runs nothing
+- Textual's Ctrl+P palette is off: `/` is the only command line
+
 Dropped: `/patched` (that's `/patch`), `/trace` (the AGENT panel shows it),
-`/moral`. Constraints: read-only, built from state the TUI already holds,
+`/moral`, `/pause`, history recall, `/time`. Constraints: read-only, built from state the TUI already holds,
 no command may make the trade-off decision on the developer's behalf
 (`/choose a` is fine, `/auto` is not). Every line fits 82 columns.
 
