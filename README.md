@@ -20,6 +20,31 @@ for you.
 - **The target runs entirely on your machine.** Nebius is used for model
   inference only.
 
+## The jester
+
+<p align="center">
+  <img src="docs/jester-splash.svg" alt="Bedlam's jester above the BEDLAM wordmark" width="360">
+</p>
+
+Bedlam has a face. The big jester holds the screen for 2.5 seconds at launch
+(any key skips it). During the run a small one sits beside the NOW box and
+changes mood with each step of the loop:
+
+| Mood | Face | When |
+|---|---|---|
+| idle | `(◕‿◕)` | baseline, after the choice, finished |
+| scheming | `(¬‿¬)` | a round starts, searching, routing, just before the trade-off |
+| striking | `(ò▿ó)` | a fault is picked and injected |
+| gloating | `(^▽^)` | your app shows a symptom, or the chosen cost bites |
+| sulking | `(-_-)` | the fault did no visible damage |
+| your turn | `(•‿•)` | waiting for your patch: the bells light green |
+| reading | `(◉_◉)` | reading your patch |
+| two-faced | `(◐‿◑)` | the trade-off: half option A, half option B |
+
+Like Bedlam's voice, the jester is display only: no randomness, no model
+call, and nothing it shows feeds a decision. The small jester appears from 93
+columns up, so the screen stays fully readable at the 82-column minimum.
+
 ## Status
 
 Phase 0 — foundations. See `PLAN.md` for the build schedule and the current phase.
