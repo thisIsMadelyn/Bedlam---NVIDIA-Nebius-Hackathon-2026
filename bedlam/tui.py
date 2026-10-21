@@ -28,6 +28,7 @@ import textwrap
 import time
 from collections import deque
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
@@ -109,6 +110,14 @@ _BAR_MAX: Final = 60
 # "    you gain  ": the hanging indent of a trade-off option's gain and cost.
 _SIDE_INDENT: Final = 14
 _BAR_CEILING_MS: Final = 2000.0
+# The run-so-far chart under the trade-off: "cache " before each row, at
+# most eight rows per container, and a blank line, a title and the fault
+# labels above the rows. Drawn only in height the options leave spare.
+_CHART_LABEL: Final = 6
+_CHART_MAX_ROWS: Final = 8
+_CHART_FRAME: Final = 3
+# CPU samples kept for the whole run: hours of sampling, far past a demo.
+_RUN_SAMPLES: Final = 4000
 _REPO_ROOT: Final = Path(__file__).resolve().parents[1]
 _LOG = get_logger("bedlam.tui")
 _SAYS: Final = " BEDLAM "
@@ -195,7 +204,17 @@ class GatedChoice:
         return True
 
 
+@dataclass(slots=True)
+class FaultWindow:
+    """The CPU samples taken while one fault was live: [start, end)."""
+
+    start: int
+    end: int | None
+    label: str
+
+
 Launch = Callable[["BedlamApp"], Awaitable[int]]
+
 StatsSource = Callable[[], Awaitable[dict[Layer, ContainerStats]]]
 
 # The command line's commands: name -> what /help says. Each one is a
@@ -299,6 +318,9 @@ class BedlamApp(App[int]):
         self._load: dict[Layer, ContainerStats] = {}
         self._cpu: dict[Layer, deque[float]] = {layer: deque(maxlen=_SPARK_LEN) for layer in Layer}
         self._load_note = "cpu and memory: starting" if stats else ""
+        # Every sample of the run, for the chart under the trade-off.
+        self._run_cpu: list[dict[Layer, float]] = []
+        self._windows: list[FaultWindow] = []
         self.choices = GatedChoice()
         self.choices.on_ask = self._render_chrome
         self._trade_off: dict[str, Any] | None = None
@@ -470,6 +492,7 @@ class BedlamApp(App[int]):
 
     def _on_injecting(self, fields: dict[str, Any]) -> None:
         self._fault, self._blast = fields["fault"], fields["blast_radius"]
+        self._windows.append(FaultWindow(len(self._run_cpu), None, f"R{self._cycle} {self._fault}"))
         blast = ", ".join(self._blast)
         self._say(f"injecting {self._fault}, blast radius {blast}", style=f"bold {DAMAGE}")
 
@@ -500,6 +523,8 @@ class BedlamApp(App[int]):
         self._probing_since = None
         self._health = fields["snapshot"]
         self._fault, self._blast = None, []
+        if self._windows and self._windows[-1].end is None:
+            self._windows[-1].end = len(self._run_cpu)
         self._say("fault removed: " + self._health_line(), style=GO)
 
     def _on_analysed(self, fields: dict[str, Any]) -> None:
@@ -694,6 +719,15 @@ class BedlamApp(App[int]):
             body.append(
                 fit(live, width - _SIDE_INDENT - len(item["felt_when"])) + "\n", style=_SOFT
             )
+        # The run so far, in whatever height the options leave. Real samples
+        # only: without any, there is no chart.
+        spare = panel.content_region.height - body.plain.count("\n")
+        if self._run_cpu and spare >= _CHART_FRAME + len(Layer):
+            rows = min(_CHART_MAX_ROWS, (spare - _CHART_FRAME) // len(Layer))
+            body.append("\n")
+            for line in cpu_chart(self._run_cpu, self._windows, width, rows):
+                body.append_text(line)
+                body.append("\n")
         panel.update(body)
 
     def _render_system(self) -> None:
@@ -751,14 +785,22 @@ class BedlamApp(App[int]):
                 _LOG.warning("container stats unavailable", extra={"fields": {"error": str(exc)}})
                 await asyncio.sleep(_STATS_RETRY_S)
                 continue
-            for layer, load in self._load.items():
-                self._cpu[layer].append(load.cpu_percent)
+            self.record_load(self._load)
             self._load_note = "cpu and memory: docker stats"
             try:
                 self._render_system()
+                if self._trade_off is not None:
+                    self._render_trade_off()
             except NoMatches:
                 return  # shutting down
             await asyncio.sleep(_STATS_PAUSE_S)
+
+    def record_load(self, load: dict[Layer, ContainerStats]) -> None:
+        """Keep one CPU sample: for the sparklines and the run-so-far chart."""
+        for layer, stats in load.items():
+            self._cpu[layer].append(stats.cpu_percent)
+        if len(self._run_cpu) < _RUN_SAMPLES:
+            self._run_cpu.append({layer: stats.cpu_percent for layer, stats in load.items()})
 
     def _load_text(self, layer: Layer) -> str | None:
         load = self._load.get(layer)
@@ -814,6 +856,62 @@ def sparkline(values: deque[float] | list[float]) -> str:
         return ""
     top = max(100.0, *values)
     return "".join(_SPARK[min(len(_SPARK) - 1, int(v / top * len(_SPARK)))] for v in values)
+
+
+def cpu_chart(
+    samples: list[dict[Layer, float]], windows: list[FaultWindow], width: int, rows: int
+) -> list[Text]:
+    """CPU per container over the whole run, fault windows marked, in `width` columns.
+
+    The samples stretch or squeeze to fill the columns; a column covering
+    several samples shows their peak, so a spike is never averaged away.
+    One scale for all containers: 100% (one full core) or the run's peak.
+    """
+    cols = width - _CHART_LABEL
+    n = len(samples)
+    spans = [range(c * n // cols, max(c * n // cols + 1, (c + 1) * n // cols)) for c in range(cols)]
+    top = max(100.0, *(v for sample in samples for v in sample.values()))
+
+    def window_of(column: int) -> int | None:
+        first = spans[column].start
+        for i, window in enumerate(windows):
+            end = window.end if window.end is not None else n
+            if window.start <= first < end:
+                return i
+        return None
+
+    owner = [window_of(c) for c in range(cols)]
+    title = "THE RUN SO FAR · cpu per container, docker stats, 100% = one core"
+    lines = [Text(f"{fit(title, width):<{width}}", style=_SOFT)]
+    labels = Text(" " * _CHART_LABEL)
+    c = 0
+    while c < cols:
+        if owner[c] is None:
+            labels.append(" ")
+            c += 1
+            continue
+        span = 1
+        while c + span < cols and owner[c + span] == owner[c]:
+            span += 1
+        labels.append(f"{windows[owner[c]].label[:span]:<{span}}", style=f"bold {DAMAGE}")
+        c += span
+    lines.append(labels)
+    for layer in Layer:
+        # Eighths of a cell: an idle container still shows its baseline.
+        levels = [
+            max(1, round(max(samples[i].get(layer, 0.0) for i in span) / top * rows * 8))
+            for span in spans
+        ]
+        for row in range(rows):
+            floor = (rows - 1 - row) * 8
+            line = Text(f"{layer.value:<{_CHART_LABEL}}" if row == rows - 1 else " " * _CHART_LABEL)
+            line.stylize(_SOFT)
+            for column, level in enumerate(levels):
+                fill = min(8, level - floor)
+                cell = _SPARK[fill - 1] if fill > 0 else " "
+                line.append(cell, style=f"dim {DAMAGE}" if owner[column] is not None else MUTED)
+            lines.append(line)
+    return lines
 
 
 def _memory(size: int) -> str:
