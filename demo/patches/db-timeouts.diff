@@ -1,0 +1,14 @@
+--- a/backend/src/infrastructure/database/session.py
++++ b/backend/src/infrastructure/database/session.py
+@@ -19,6 +19,11 @@ def build_engine(**overrides: Any) -> AsyncEngine:
+         "future": True,
+         "pool_pre_ping": settings.POSTGRES_POOL_PRE_PING,
+         "pool_recycle": settings.POSTGRES_POOL_RECYCLE,
++        # Fail fast instead of hanging behind a stuck database: a checkout
++        # waits 2s at most, a connect 1s, and every statement is bounded at
++        # 2s so a hung query gives its connection back.
++        "pool_timeout": 2,
++        "connect_args": {"timeout": 1, "command_timeout": 2},
+     }
+     if "poolclass" not in overrides:
+         options["pool_size"] = settings.POSTGRES_POOL_SIZE

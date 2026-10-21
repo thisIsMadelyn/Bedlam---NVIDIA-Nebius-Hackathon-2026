@@ -35,7 +35,8 @@ _USERNAME_ENV: Final = "BEDLAM_ADMIN_USERNAME"
 _PASSWORD_ENV: Final = "BEDLAM_ADMIN_PASSWORD"
 _DEFAULT_USERNAME: Final = "bedlam"
 _DEFAULT_PASSWORD: Final = "Bedlam-local-1"
-# After a hang, a patch held if the read now ends this many times faster.
+# From a hang or a slow answer, a patch held if the read now ends this many
+# times faster.
 HELD_SPEEDUP: Final = 2.0
 
 
@@ -78,16 +79,19 @@ class AppResult:
 
 
 def held(before: AppResult, after: AppResult) -> bool:
-    """The rule: the read went from hanging or erroring to answering, or it
-    hung before and now ends at least `HELD_SPEEDUP` times faster. Both
-    numbers are always shown.
+    """The rule: the read went from hanging or erroring to answering; or it
+    hung, or answered slowly, and now ends at least `HELD_SPEEDUP` times
+    faster without getting worse. Both numbers are always shown.
 
-    A speedup counts only after a hang: an error that comes back faster is
-    still an error, and a freshly restarted app is faster anyway."""
+    An error that comes back faster is still an error, so a speedup counts
+    only from a hang or from a slow answer to an answer."""
     if after.ok and not before.ok:
         return True
+    faster = after.latency_ms * HELD_SPEEDUP <= before.latency_ms
     if before.hung and not after.hung:
-        return after.latency_ms * HELD_SPEEDUP <= before.latency_ms
+        return faster
+    if before.ok and after.ok:
+        return faster
     return False
 
 

@@ -1,0 +1,64 @@
+--- a/backend/src/infrastructure/auth/setup.py
++++ b/backend/src/infrastructure/auth/setup.py
+@@ -12,6 +12,7 @@ it's configured. Email recovery and sudo are intentionally not configured - the
+ boilerplate has no email pipeline, and no route gates on sudo.
+ """
+ 
++import time
+ from contextlib import asynccontextmanager
+ from typing import Any
+ 
+@@ -50,7 +51,7 @@ def _rate_limiter() -> RateLimiterBackend | None:
+ def _session_transport() -> SessionTransport:
+     """Cookie sessions on ``SESSION_BACKEND``, on their own Redis database when Redis-backed."""
+     use_redis = settings.SESSION_BACKEND == SessionBackend.REDIS
+-    return SessionTransport(
++    return _CachedSessionTransport(
+         backend=SessionBackend.REDIS.value if use_redis else SessionBackend.MEMORY.value,
+         redis_url=settings.SESSION_REDIS_URL if use_redis else None,
+         csrf=settings.CSRF_ENABLED,
+@@ -60,6 +61,44 @@ def _session_transport() -> SessionTransport:
+     )
+ 
+ 
++class _CachedSessionTransport(SessionTransport):
++    """Session auth that rides out a slow or unreachable session store.
++
++    A principal authenticated in the last 30s is served from process memory,
++    without Redis or Postgres. When the store or the database fails, one up
++    to 5 minutes old is served instead. Safe methods only, so CSRF checks on
++    writes are never skipped. The cost: a revoked session keeps reading for
++    up to 30s, or 5 minutes while the store is down.
++    """
++
++    FRESH_S = 30.0
++    STALE_S = 300.0
++    _SAFE = frozenset({"GET", "HEAD", "OPTIONS"})
++
++    def __init__(self, *args: Any, **kwargs: Any) -> None:
++        super().__init__(*args, **kwargs)
++        self._principals: dict[str, tuple[float, Principal]] = {}
++
++    async def authenticate(self, request: Request, ctx: Any) -> Principal | None:
++        session_id = request.cookies.get(self.manager.session_cookie_name) if self.manager else None
++        cached = self._principals.get(session_id) if session_id else None
++        safe = request.method in self._SAFE
++        now = time.monotonic()
++        if cached and safe and now - cached[0] < self.FRESH_S:
++            return cached[1]
++        try:
++            principal = await super().authenticate(request, ctx)
++        except Exception:
++            if cached and safe and now - cached[0] < self.STALE_S:
++                return cached[1]
++            raise
++        if session_id and principal is not None:
++            self._principals[session_id] = (now, principal)
++        elif session_id:
++            self._principals.pop(session_id, None)
++        return principal
++
++
+ def _new_user_fields(context: NewUserContext) -> dict[str, Any]:
+     """The columns crudauth doesn't fill for an account it creates: the display name."""
+     return {"name": context.suggested_name[:NAME_MAX_LENGTH]}

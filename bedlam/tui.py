@@ -183,7 +183,7 @@ class GatedPatchSource:
         self.waiting = False
         self.on_empty: Callable[[], None] = lambda: None
 
-    async def wait_for_patch(self, cycle: int) -> Patch:
+    async def wait_for_patch(self, cycle: int, fault: str | None = None) -> Patch:
         while True:
             self.waiting = True
             try:
@@ -191,7 +191,7 @@ class GatedPatchSource:
             finally:
                 self.waiting = False
                 self._released.clear()
-            patch = await self._inner.wait_for_patch(cycle)
+            patch = await self._inner.wait_for_patch(cycle, fault)
             if patch.diff.strip():
                 return patch
             self.on_empty()

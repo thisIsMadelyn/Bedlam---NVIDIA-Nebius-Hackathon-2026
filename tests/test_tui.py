@@ -114,7 +114,7 @@ def test_p_before_a_fault_is_live_does_not_skip_a_patch() -> None:
     async def scenario() -> None:
         gate = GatedPatchSource(ScriptedPatchSource())
         assert not gate.release(), "nothing was waiting"
-        waiter = asyncio.create_task(gate.wait_for_patch(1))
+        waiter = asyncio.create_task(gate.wait_for_patch(1, "db.connection_cut"))
         await asyncio.sleep(0.05)
         assert not waiter.done(), "an early p must not pre-approve the next patch"
         assert gate.release()

@@ -3,11 +3,11 @@
 The loop waits on a `PatchSource` between injecting a fault and analysing
 the fix. The TUI defaults to `GitPatchSource`: the developer edits the target
 in their own editor and Bedlam reads the real `git diff`. Headless runs, the
-replay recording and `--scripted` use `ScriptedPatchSource`: one unified
-diff per cycle (`cycle1.diff`, `cycle2.diff`, ...) written against the real
-boilerplate source. Either way the diff feeds patch analysis as-is, and the
-patch runs: the api container mounts the target's source. Live scripted
-runs apply each diff to the target for the run.
+replay recording and `--scripted` use `ScriptedPatchSource`: the prepared
+fix for whichever fault is live, from a small library of real diffs written
+against the boilerplate source (`demo/patches/`). Either way the diff feeds
+patch analysis as-is, and the patch runs: the api container mounts the
+target's source. Live scripted runs apply each fix to the target for the run.
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ import asyncio
 import os
 import subprocess
 import tempfile
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final, Protocol
@@ -23,6 +24,7 @@ from typing import Final, Protocol
 import httpx
 
 from bedlam.logging import get_logger, log_event
+from bedlam.probes.app import AppResult
 from bedlam.topology import Layer, endpoint_for
 
 _REPO_ROOT: Final = Path(__file__).resolve().parents[1]
@@ -41,7 +43,9 @@ class Patch:
 
 
 class PatchSource(Protocol):
-    async def wait_for_patch(self, cycle: int) -> Patch: ...
+    # `fault` is the live fault's catalog id; the scripted source picks its
+    # fix by it, the developer's own edits ignore it.
+    async def wait_for_patch(self, cycle: int, fault: str | None = None) -> Patch: ...
 
 
 class GitPatchSource:
@@ -63,7 +67,7 @@ class GitPatchSource:
             raise ValueError(f"not a git working tree: {repo}")
         self._before = self._snapshot()
 
-    async def wait_for_patch(self, cycle: int) -> Patch:
+    async def wait_for_patch(self, cycle: int, fault: str | None = None) -> Patch:
         return await asyncio.to_thread(self._read, cycle)
 
     def _read(self, cycle: int) -> Patch:
@@ -93,14 +97,42 @@ class GitPatchSource:
         return result.stdout
 
 
-class ScriptedPatchSource:
-    """The prepared diffs, one per cycle.
+# The prepared fixes. Each is one or more component diffs, one file each, so
+# fixes stack across rounds without conflicting. A component already in is
+# not applied twice.
+FIXES: Final[dict[str, tuple[str, ...]]] = {
+    "db-fallback": ("auth-cache", "user-cache", "tiers-cache"),
+    # Timeouts alone turn a db hang into a slow error: one request makes
+    # several db calls. Failing fast into the fallback is what answers.
+    "db-failfast": ("db-timeouts", "auth-cache", "user-cache", "tiers-cache"),
+    "session-cache": ("redis-timeouts", "auth-cache"),
+}
+# Which fix answers which fault: a fallback that still answers, with
+# timeouts in front of it where the fault hangs. Every catalog fault has one.
+FIX_FOR: Final[dict[str, str]] = {
+    "db.latency.300": "db-fallback",
+    "db.latency.2500": "db-failfast",
+    "db.bandwidth.1": "db-fallback",
+    "db.connection_cut": "db-fallback",
+    "db.timeout.0": "db-failfast",
+    "db.timeout.3000": "db-failfast",
+    "cache.latency.300": "session-cache",
+    "cache.latency.2500": "session-cache",
+    "cache.bandwidth.1": "session-cache",
+    "cache.connection_cut": "session-cache",
+    "cache.timeout.0": "session-cache",
+    "cache.timeout.3000": "session-cache",
+}
 
-    Given a `target`, each diff is also applied to that checkout, so the
-    api, which mounts it, runs the patch. Use it as a context manager:
-    entering reverts any diff a killed run left applied, leaving reverts
-    every diff this run applied. Without a target -- tests, replay -- the
-    diffs are only read.
+
+class ScriptedPatchSource:
+    """The prepared fix for the live fault, from `FIX_FOR`.
+
+    Given a `target`, the fix's components are also applied to that
+    checkout, so the api, which mounts it, runs them. Use it as a context
+    manager: entering reverts any component a killed run left applied,
+    leaving reverts every component this run applied. Without a target --
+    tests, replay -- the diffs are only read.
     """
 
     def __init__(self, directory: Path = DEFAULT_PATCH_DIR, target: Path | None = None) -> None:
@@ -110,7 +142,7 @@ class ScriptedPatchSource:
 
     def __enter__(self) -> ScriptedPatchSource:
         if self._target is not None:
-            for path in sorted(self._directory.glob("cycle*.diff"), reverse=True):
+            for path in sorted(self._directory.glob("*.diff")):
                 if self._apply(path, "-R", "--check", check=False):
                     self._apply(path, "-R")
         return self
@@ -119,18 +151,30 @@ class ScriptedPatchSource:
         self.restore()
 
     def restore(self) -> None:
-        """Revert every diff this run applied, newest first."""
+        """Revert every component this run applied, newest first."""
         while self._applied:
             self._apply(self._applied.pop(), "-R")
 
-    async def wait_for_patch(self, cycle: int) -> Patch:
-        path = self._directory / f"cycle{cycle}.diff"
-        if not path.is_file():
-            raise FileNotFoundError(f"no scripted patch for cycle {cycle}: {path}")
+    async def wait_for_patch(self, cycle: int, fault: str | None = None) -> Patch:
+        if fault not in FIX_FOR:
+            raise KeyError(f"no prepared fix for fault {fault!r}")
+        name = FIX_FOR[fault]
+        paths = [self._directory / f"{component}.diff" for component in FIXES[name]]
+        missing = [path.name for path in paths if not path.is_file()]
+        if missing:
+            raise FileNotFoundError(f"fix {name} is missing {', '.join(missing)}")
+        fresh = paths
         if self._target is not None:
-            await asyncio.to_thread(self._apply, path)
-            self._applied.append(path)
-        return Patch(cycle=cycle, source=path.name, diff=path.read_text(encoding="utf-8"))
+            fresh = [path for path in paths if path not in self._applied]
+            for path in fresh:
+                await asyncio.to_thread(self._apply, path)
+                self._applied.append(path)
+        # The diff is what this round adds; a fix already fully in shows whole.
+        # The label stays short: it is printed on 82-column lines.
+        shown = fresh or paths
+        source = f"fix {name}" + ("" if fresh else " (already in)")
+        diff = "".join(path.read_text(encoding="utf-8") for path in shown)
+        return Patch(cycle=cycle, source=source, diff=diff)
 
     def _apply(self, path: Path, *flags: str, check: bool = True) -> bool:
         # autocrlf off: the diffs and the checkout are LF, and a Windows git
@@ -153,14 +197,17 @@ class DeployError(RuntimeError):
     """The api did not come back serving after the restart."""
 
 
-async def deploy() -> None:
+async def deploy(warm_up: Callable[[], Awaitable[AppResult]] | None = None) -> None:
     """Restart the api so it runs the patch, and wait until it serves.
 
     The api reloads by itself when a file changes, but a reload under a
     live fault can fail at startup (the boilerplate connects to Postgres as
     it starts) and then waits for the next change. So the loop removes the
-    fault first and restarts the container: the patch starts clean. This
-    only waits; nothing it sees feeds a decision.
+    fault first and restarts the container: the patch starts clean.
+
+    `warm_up` is then read until it answers once, on the healthy stack, the
+    way real traffic warms caches between a deploy and the next failure.
+    This only waits; nothing it sees feeds a decision.
     """
     await asyncio.to_thread(
         subprocess.run,
@@ -183,4 +230,8 @@ async def deploy() -> None:
             if loop.time() >= give_up:
                 raise DeployError("the api did not come back after the restart")
             await asyncio.sleep(_DEPLOY_POLL_S)
-    log_event(_LOG, "api serving the patch")
+    while warm_up is not None and not (await warm_up()).ok:
+        if loop.time() >= give_up:
+            raise DeployError("the read through the app never answered after the restart")
+        await asyncio.sleep(_DEPLOY_POLL_S)
+    log_event(_LOG, "api serving the patch", warmed=warm_up is not None)

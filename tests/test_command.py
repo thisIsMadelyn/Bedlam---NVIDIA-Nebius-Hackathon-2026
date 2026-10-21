@@ -139,7 +139,7 @@ def test_after_a_run_why_diff_and_seed_explain_it() -> None:
             assert not any(row.split()[1].startswith("http") for row in why[2:])
             await _type(pilot, "diff")
             diff = _reply(app, "diff")
-            assert diff[0].startswith("  patch: cycle2.diff (")
+            assert diff[0].startswith("  patch: fix ")
             assert diff[1].startswith("  defends: ") and diff[2].startswith("  gaps: ")
             await _type(pilot, "seed")
             seed = _reply(app, "seed")
@@ -337,7 +337,7 @@ def test_the_post_mortem_commands_tell_the_run_back() -> None:
             named = [r for r in app._cycles[1]["routed"]["results"] if r["layer"]]
             assert len(_reply(app, "why 1")) == 2 + len(named)
             await _type(pilot, "diff 1")
-            assert _reply(app, "diff 1")[0].startswith("  patch: cycle1.diff (")
+            assert _reply(app, "diff 1")[0].startswith("  patch: fix ")
             await _type(pilot, "calls")
             calls = _reply(app, "calls")
             sites = {record.site for record in app._models.records}

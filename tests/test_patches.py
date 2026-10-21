@@ -8,7 +8,16 @@ from pathlib import Path
 
 import pytest
 
-from bedlam.patches import GitPatchSource, Patch, ScriptedPatchSource
+from bedlam.patches import (
+    DEFAULT_PATCH_DIR,
+    DEFAULT_TARGET,
+    FIX_FOR,
+    FIXES,
+    GitPatchSource,
+    Patch,
+    ScriptedPatchSource,
+)
+from bedlam.specialists.catalog import CATALOG
 from bedlam.tui import GatedPatchSource
 
 
@@ -68,7 +77,7 @@ class _Replies:
     def __init__(self, *diffs: str) -> None:
         self._diffs = iter(diffs)
 
-    async def wait_for_patch(self, cycle: int) -> Patch:
+    async def wait_for_patch(self, cycle: int, fault: str | None = None) -> Patch:
         return Patch(cycle=cycle, source="git diff", diff=next(self._diffs))
 
 
@@ -92,31 +101,73 @@ def test_p_with_no_changes_says_so_and_keeps_waiting() -> None:
 @pytest.fixture
 def diffs(tmp_path_factory: pytest.TempPathFactory) -> Path:
     directory = tmp_path_factory.mktemp("patches")  # outside the repo
-    (directory / "cycle1.diff").write_text(
+    (directory / "redis-timeouts.diff").write_text(
         "--- a/redis.py\n+++ b/redis.py\n@@ -1 +1 @@\n-timeout = None\n+timeout = 2\n",
+        encoding="utf-8",
+    )
+    (directory / "auth-cache.diff").write_text(
+        "--- /dev/null\n+++ b/auth_cache.py\n@@ -0,0 +1 @@\n+fresh_s = 30\n",
         encoding="utf-8",
     )
     return directory
 
 
-def test_scripted_patches_are_applied_for_the_run_and_reverted_after(
-    repo: Path, diffs: Path
-) -> None:
+def test_the_fix_for_the_live_fault_is_applied_and_reverted_after(repo: Path, diffs: Path) -> None:
     with ScriptedPatchSource(diffs, target=repo) as source:
-        patch = asyncio.run(source.wait_for_patch(1))
-        assert "+timeout = 2" in patch.diff
+        patch = asyncio.run(source.wait_for_patch(1, "cache.connection_cut"))
+        assert patch.source == "fix session-cache"
+        assert "+timeout = 2" in patch.diff and "+fresh_s = 30" in patch.diff
         assert (repo / "redis.py").read_text(encoding="utf-8") == "timeout = 2\n"
     assert _git(repo, "status", "--porcelain") == ""
 
 
-def test_a_patch_left_by_a_killed_run_is_reverted_on_entry(repo: Path, diffs: Path) -> None:
+def test_a_fix_already_in_is_not_applied_twice(repo: Path, diffs: Path) -> None:
+    with ScriptedPatchSource(diffs, target=repo) as source:
+        asyncio.run(source.wait_for_patch(1, "cache.connection_cut"))
+        again = asyncio.run(source.wait_for_patch(2, "cache.timeout.0"))
+        assert again.source == "fix session-cache (already in)"
+    assert _git(repo, "status", "--porcelain") == ""
+
+
+def test_a_fix_left_by_a_killed_run_is_reverted_on_entry(repo: Path, diffs: Path) -> None:
     killed = ScriptedPatchSource(diffs, target=repo)
-    asyncio.run(killed.wait_for_patch(1))  # never restored
+    asyncio.run(killed.wait_for_patch(1, "cache.connection_cut"))  # never restored
 
     with ScriptedPatchSource(diffs, target=repo):
         assert _git(repo, "status", "--porcelain") == ""
 
 
 def test_without_a_target_the_diffs_are_only_read(repo: Path, diffs: Path) -> None:
-    asyncio.run(ScriptedPatchSource(diffs).wait_for_patch(1))
+    asyncio.run(ScriptedPatchSource(diffs).wait_for_patch(1, "cache.connection_cut"))
     assert _git(repo, "status", "--porcelain") == ""
+
+
+def test_every_fault_has_a_prepared_fix() -> None:
+    assert set(FIX_FOR) == {option.id for option in CATALOG}
+    assert set(FIX_FOR.values()) <= FIXES.keys()
+
+
+def test_every_component_touches_one_file_and_applies_to_the_target() -> None:
+    touched: dict[str, str] = {}
+    for component in sorted({c for components in FIXES.values() for c in components}):
+        diff = (DEFAULT_PATCH_DIR / f"{component}.diff").read_text(encoding="utf-8")
+        files = [line[6:] for line in diff.splitlines() if line.startswith("+++ b/")]
+        assert len(files) == 1, f"{component} touches {files}"
+        assert files[0] not in touched, f"{component} and {touched.get(files[0])} conflict"
+        touched[files[0]] = component
+        # Against the committed boilerplate, whatever the working tree holds.
+        check = subprocess.run(
+            [
+                "git",
+                "-c",
+                "core.autocrlf=false",
+                "-C",
+                str(DEFAULT_TARGET),
+                "apply",
+                "--check",
+                "--cached",
+            ],
+            input=diff.encode("utf-8"),
+            capture_output=True,
+        )
+        assert check.returncode == 0, f"{component}: {check.stderr.decode()}"

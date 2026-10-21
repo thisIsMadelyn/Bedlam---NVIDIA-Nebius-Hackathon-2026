@@ -21,7 +21,8 @@ ANSWERED_SLOW = AppResult(True, 900.0, 200)
         (HUNG, ERROR_FAST, True),  # hung, now fails fast: at least twice as fast
         (HUNG, HUNG, False),  # nothing changed
         (ERROR_SLOW, ERROR_FAST, False),  # a faster error is still an error
-        (ANSWERED_SLOW, ANSWERED, False),  # a speedup counts only after a hang
+        (ANSWERED_SLOW, ANSWERED, True),  # slow answer to an answer twice as fast
+        (ANSWERED, ANSWERED_SLOW, False),  # slower is not held
         (ANSWERED, ERROR_FAST, False),  # failing where it used to answer is worse
     ],
 )

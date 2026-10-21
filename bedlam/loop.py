@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import functools
 import os
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -242,7 +243,7 @@ async def run(deps: LoopDeps, trace: Trace) -> Trace:
             record["symptom"] = symptom.to_dict()
             emit("symptom", {"cycle": cycle, "symptom": record["symptom"]})
             emit("awaiting_patch", {"cycle": cycle})
-            patch = await deps.patches.wait_for_patch(cycle)
+            patch = await deps.patches.wait_for_patch(cycle, option.id)
             record["patch"] = {"source": patch.source, "chars": len(patch.diff)}
             emit("patched", {"cycle": cycle, "patch": record["patch"]})
         finally:
@@ -380,7 +381,8 @@ async def execute(
     models = ModelClient(transport, root_seed=root_seed)
     backend: SearchBackend = TavilyBackend()
     probe: Callable[[], Awaitable[dict[Layer, ProbeResult]]] = snapshot
-    app_probe: Callable[[], Awaitable[AppResult]] = AppProbe()
+    live_app_probe = AppProbe()
+    app_probe: Callable[[], Awaitable[AppResult]] = live_app_probe
     # Recording wraps the live calls; it never replaces them.
     recording = Recording(root_seed=root_seed) if record_path else None
     if recording is not None:
@@ -406,7 +408,8 @@ async def execute(
                 on_event=on_event,
                 choices=choices,
                 app_probe=app_probe,
-                deploy=deploy,
+                # The warm-up reads go unrecorded: they only wait.
+                deploy=functools.partial(deploy, warm_up=live_app_probe),
             )
             await run(deps, trace)
     except Exception as exc:

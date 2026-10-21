@@ -1,0 +1,25 @@
+--- a/backend/src/infrastructure/redis.py
++++ b/backend/src/infrastructure/redis.py
+@@ -1,6 +1,8 @@
+ """Redis clients shared by application infrastructure."""
+ 
+ from redis.asyncio import Redis
++from redis.asyncio.retry import Retry
++from redis.backoff import NoBackoff
+ 
+ from .config.settings import get_settings
+ 
+@@ -13,7 +15,12 @@ def _client(host: str, port: int, db: int, password: str | None, pool_size: int,
+         port=port,
+         db=db,
+         password=password,
+-        socket_timeout=timeout,
++        # Fail fast instead of hanging behind a stuck Redis: connects and
++        # reads give up after 1s, and a dead Redis costs one quick retry,
++        # not seconds of backed-off ones.
++        socket_timeout=min(timeout, 1),
++        socket_connect_timeout=min(timeout, 1),
++        retry=Retry(NoBackoff(), 1),
+         max_connections=pool_size,
+         decode_responses=False,
+     )
