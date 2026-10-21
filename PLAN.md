@@ -330,17 +330,26 @@ patch".
 
 ### Slash commands in the TUI
 
-Raised 20 Oct. A `/` command line inside the TUI, for example:
+Raised 20 Oct. The command line landed with `/help`, `/patch`, `/choose` and
+`/quit`. Approved 21 Oct, before Phase 5:
 
-- `/status` — current cycle (1, 2 or escalation), active fault and its layer
-- `/trace` — model call log (call site, model, tokens, latency) and Tavily calls
-- `/why` — why this specialist was picked: per-layer Tavily weights and the basis
-- `/patched` — developer signals the patch is in, Bedlam re-probes
-- `/seed` — show the root seed so a judge can reproduce the run
-- `/help` — list the commands
+- `/status` — cycle (1, 2 or trade-off), live fault, blast radius, what Bedlam waits on
+- `/why` — the routing weights and basis, plus the top Tavily results behind them
+- `/diff` — what the diff analysis read in the last patch: defends and gaps
+- `/seed` — the root seed, the `make run SEED=…` rerun, and that only replays
+  reproduce exactly (Token Factory varies at temperature 0)
 
-Constraints: no command may make the trade-off decision on the developer's behalf
-(`/choose a` is fine, `/auto` is not). Help output must fit 82 columns.
+Dropped: `/patched` (that's `/patch`), `/trace` (the AGENT panel shows it),
+`/moral`. Constraints: read-only, built from state the TUI already holds,
+no command may make the trade-off decision on the developer's behalf
+(`/choose a` is fine, `/auto` is not). Every line fits 82 columns.
+
+### End splash
+
+Approved 21 Oct, before Phase 5. When a run completes, the launch splash comes
+back with the jester's moral under the wordmark, fixed text, no model call:
+"it was never stable. you just stopped looking." and, dim, "same time next
+sprint." Any key returns to the frame; Q quits from there.
 
 ### Agent and resource usage on screen
 
