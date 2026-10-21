@@ -437,3 +437,55 @@ def test_grep_filters_the_post_mortem_log_but_never_the_reply_just_asked_for() -
             assert sum(row.lstrip().startswith(("c1 ", "c2 ", "tf ")) for row in shown) == 3
 
     asyncio.run(scenario())
+
+
+# Every command with an argument it accepts; /quit is left out, it ends the app.
+_EVERY_COMMAND: tuple[str, ...] = (
+    *(name for name in COMMANDS if name != "quit"),
+    "cycle 1", "why 1", "diff 2", "grep c1", "grep", "zoom agent", "zoom",
+    "copy timeline", "choose b", "sudo choose a", "sudo rm -rf /",
+    "please explain the db fault to me", "what should I pick?",
+)  # fmt: skip
+
+
+def test_no_command_ever_calls_a_model_or_the_search() -> None:
+    """The command line is not a chat: typed text never reaches a model.
+
+    Token use is fixed by the loop (two cycles and one trade-off), not by
+    how much the developer types.
+    """
+    copied: list[str] = []
+
+    def spent(app: BedlamApp) -> tuple[int, int]:
+        return len(app._models.records), len(app._search.calls)
+
+    async def scenario() -> None:
+        app = _app()
+        app.copy_to_clipboard = copied.append  # type: ignore[method-assign]
+        async with app.run_test(size=SIZE) as pilot:
+            for _ in range(2000):
+                if app.patches.waiting:
+                    await pilot.press("p")
+                if app.choices.waiting:
+                    break
+                await asyncio.sleep(0.01)
+            await pilot.pause(0.2)
+            before = spent(app)
+            for command in _EVERY_COMMAND:
+                if command.startswith("choose"):
+                    continue  # it would answer the trade-off
+                await _type(pilot, command)
+            assert spent(app) == before, "a command spent tokens while the choice waited"
+            assert app.choices.waiting
+            await pilot.press("a")
+            for _ in range(500):
+                if app.exit_code is not None:
+                    break
+                await asyncio.sleep(0.01)
+            await pilot.pause(0.2)
+            after = spent(app)
+            for command in _EVERY_COMMAND:
+                await _type(pilot, command)
+            assert spent(app) == after, "a command spent tokens after the run"
+
+    asyncio.run(scenario())
