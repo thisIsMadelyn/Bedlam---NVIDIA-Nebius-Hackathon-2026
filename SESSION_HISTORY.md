@@ -23,6 +23,40 @@ badges of either kind.
 
 ---
 
+## Session [2026-10-21-1506]
+
+- **Start status:** `ea2af77`, working tree clean, 96 tests passing. Phases 3
+  and 4 complete. Open: Super did not always match an option's consequence
+  fault to its stated cost; the wide layout left the trade-off panel half
+  empty.
+- **End status:** `4529e30`, working tree clean apart from this entry, 122
+  tests passing, lint and format clean. Both open issues closed. Replay
+  fixture re-recorded live after the escalation prompt change. Still open:
+  the fault now always matches the condition an option names, but whether
+  that condition matches the option's cost sentence is the model's call (in
+  the live record, "drops valid requests on temporary stalls" was given
+  "cache drops connections"); the mismatch is now visible on screen in plain
+  words. Next: Phase 5 (rehearsal and feature freeze, Mon 26 Oct).
+- **Badges:**
+  - 🐛 Bug fix — The trade-off's consequence fault could contradict the
+    option's cost. Options now give a cost layer and one of five plain
+    conditions (slow, hangs, stalls then drops, drops connections, crawls);
+    code maps the pair to the catalog fault and rejects anything off the
+    list. The screen shows `felt when cache is slow · shown live as
+    cache.latency.2500` on one line, so the longest trade-off still fits at
+    82 x 30; the decision record gains "Felt when".
+  - 🆕 Addition — THE RUN SO FAR: every CPU sample of the run, charted per
+    container under the trade-off options with each round's fault window
+    labelled, in whatever height the options leave (one row per container
+    at 82 x 30, up to eight on a tall terminal, none without samples).
+    Updates live while the developer decides. Display only.
+  - 🆕 Addition — The jester, designed with Claude Design: a big launch
+    splash with the BEDLAM wordmark (2.5 s, any key skips) and a 9 x 3 face
+    beside the NOW box from 93 columns up, its mood following the voice's
+    event keys. Display only, no randomness.
+  - 🆕 Addition — README section on the jester: the splash as an SVG
+    exported with Rich in the TUI's colours, and a table of moods.
+
 ## Session [2026-10-20-2344]
 
 - **Start status:** `8a4cbf9`, working tree clean, 85 tests passing. Phase 3
