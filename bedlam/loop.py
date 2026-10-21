@@ -147,7 +147,13 @@ async def run(deps: LoopDeps, trace: Trace) -> Trace:
         record["specialist"] = specialist.name
         log_event(_LOG, "routed", cycle=cycle, **routing.to_dict(), specialist=specialist.name)
         emit(
-            "routed", {"cycle": cycle, "routing": record["routing"], "specialist": specialist.name}
+            "routed",
+            {
+                "cycle": cycle,
+                "routing": record["routing"],
+                "specialist": specialist.name,
+                "results": record["results"],
+            },
         )
 
         # 3. Synthesise and select. A failed synthesis leaves selection to

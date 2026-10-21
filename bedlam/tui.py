@@ -23,6 +23,7 @@ import argparse
 import asyncio
 import math
 import os
+import re
 import subprocess
 import textwrap
 import time
@@ -106,6 +107,8 @@ _JESTER_COLOURS: Final = {
     "accent": ACCENT, "ink": INK, "muted": MUTED, "go": GO, "soft": _SOFT, "text": _TEXT,
 }  # fmt: skip
 _SPLASH_COLOURS: Final = {**_JESTER_COLOURS, "background": _BACKGROUND}
+# How many search results /why lists.
+_WHY_RESULTS: Final = 3
 # How long the launch splash holds before the run starts. Any key skips it.
 # A completed run holds its last frame as long, then the end splash comes up.
 SPLASH_S: Final = 2.5
@@ -235,6 +238,10 @@ StatsSource = Callable[[], Awaitable[dict[Layer, ContainerStats]]]
 # developer: a command that picks a side is a bug (CLAUDE.md).
 COMMANDS: Final = {
     "help": "list these commands",
+    "status": "where the run is and what Bedlam is waiting for",
+    "why": "why this layer: Tavily weights and the results behind them",
+    "diff": "what Bedlam read in your last patch",
+    "seed": "the root seed, and how to run this again",
     "patch": "hand over your fix, same as P",
     "choose": "your side of the trade-off: /choose a or /choose b",
     "quit": "leave Bedlam, same as Q",
@@ -348,6 +355,10 @@ class BedlamApp(App[int]):
         self.choices.on_ask = self._render_chrome
         self._trade_off: dict[str, Any] | None = None
         self._escalated = False
+        # The latest of each, for /why and /diff.
+        self._routed: dict[str, Any] | None = None
+        self._patch: dict[str, Any] | None = None
+        self._analysis: dict[str, Any] | None = None
         # Where the run's decision record is written, said once it exists.
         self.decision_file: Path | None = None
         self.exit_code: int | None = None
@@ -474,6 +485,72 @@ class BedlamApp(App[int]):
         for name, about in COMMANDS.items():
             self._say(f"  /{name:<8} {about}", style=_SOFT)
 
+    def _command_status(self, arg: str) -> None:
+        if self.exit_code is not None:
+            where = "run over" if self.exit_code == 0 else "run stopped"
+        elif self._escalated:
+            where = "trade-off"
+        elif self._cycle:
+            where = f"cycle {self._cycle} of {MAX_CYCLES}"
+        else:
+            where = "baseline, before cycle 1"
+        if self.patches.waiting:
+            where += " · waiting for your patch"
+        elif self.choices.waiting:
+            where += " · waiting for your choice: A or B"
+        elif self.exit_code is None:
+            where += " · Bedlam is working"
+        self._say(f"  {where}", style=_SOFT)
+        if self._fault:
+            blast = ", ".join(self._blast)
+            self._say(f"  live fault: {self._fault} · blast radius: {blast}", style=_SOFT)
+        else:
+            self._say("  no fault live", style=_SOFT)
+
+    def _command_why(self, arg: str) -> None:
+        if self._routed is None:
+            self._say("  nothing routed yet. /why works once Bedlam has searched", style=_SOFT)
+            return
+        routing = self._routed["routing"]
+        weights = " · ".join(f"{k} {v:.2f}" for k, v in routing["weights"].items())
+        head = f"  routed to {self._routed['specialist']} ({routing['basis']})"
+        self._say(f"{head}: {weights}" if weights else head, style=_SOFT)
+        if routing["basis"] == "symptom":
+            self._say("  no result named a layer, so the symptom's layer decided", style=_SOFT)
+        elif routing["basis"] == "seeded":
+            self._say("  nothing named a layer, so the root seed decided", style=_SOFT)
+        named = [r for r in self._routed["results"] if r["layer"]]
+        if not named:
+            return
+        self._say("  results behind it, strongest first:", style=_SOFT)
+        for result in sorted(named, key=lambda r: -r["score"])[:_WHY_RESULTS]:
+            where = re.sub(r"^https?://(www\.)?", "", result["url"])
+            text = f"    {result['layer']:<5} {result['score']:.2f}  {where}  {result['title']}"
+            self._say(text, style=_SOFT)
+
+    def _command_diff(self, arg: str) -> None:
+        if self._patch is None:
+            self._say("  no patch read yet", style=_SOFT)
+            return
+        self._say(f"  patch: {self._patch['source']} ({self._patch['chars']} chars)", style=_SOFT)
+        if self._analysis is None:
+            self._say("  still reading it", style=_SOFT)
+            return
+        defended = ", ".join(f"{d['layer']}/{d['kind']}" for d in self._analysis["defended"])
+        self._say(f"  defends: {defended or 'none'}", style=_SOFT)
+        gaps = "; ".join(self._analysis["gaps"]) or "none found"
+        for line in wrap(f"gaps: {gaps}", indent=6, width=self._say_width() - 2):
+            self._say(f"  {line}", style=_SOFT)
+
+    def _command_seed(self, arg: str) -> None:
+        seed = self.root_seed
+        for line in (
+            f"  root seed {seed} · every seeded choice in this run derives from it",
+            f"  run it again: make run SEED={seed}",
+            "  live model replies can still vary; make test replays a run exactly",
+        ):
+            self._say(line, style=_SOFT)
+
     def _command_patch(self, arg: str) -> None:
         self.action_patch()
 
@@ -544,6 +621,7 @@ class BedlamApp(App[int]):
             self._say(f"tavily  {query['text']}", style=ACCENT)
 
     def _on_routed(self, fields: dict[str, Any]) -> None:
+        self._routed = fields
         routing = fields["routing"]
         weights = " · ".join(f"{k} {v:.2f}" for k, v in routing["weights"].items())
         self._say(f"routed to {fields['specialist']} ({routing['basis']}: {weights})")
@@ -581,6 +659,7 @@ class BedlamApp(App[int]):
         self._say(text, style=f"bold {GO}")
 
     def _on_patched(self, fields: dict[str, Any]) -> None:
+        self._patch, self._analysis = fields["patch"], None
         patch = fields["patch"]
         self._say(f"patch in: {patch['source']} ({patch['chars']} chars)")
 
@@ -593,7 +672,7 @@ class BedlamApp(App[int]):
         self._say("fault removed: " + self._health_line(), style=GO)
 
     def _on_analysed(self, fields: dict[str, Any]) -> None:
-        analysis = fields["analysis"]
+        analysis = self._analysis = fields["analysis"]
         defended = ", ".join(f"{d['layer']}/{d['kind']}" for d in analysis["defended"]) or "none"
         self._say(f"patch defends: {defended}")
         if analysis["gaps"]:
