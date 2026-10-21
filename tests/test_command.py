@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import asyncio
 
-from test_tui import SIZE, _app, _drive
+import pytest
+from test_tui import SIZE, WIDE, _app, _drive
 from textual.widgets import Input, RichLog
 
 from bedlam.patches import ScriptedPatchSource
+from bedlam.topology import Layer
 from bedlam.tui import COMMANDS, SAY, BedlamApp
 from bedlam.voice import SUDO, SUDO_CHOOSE
 
@@ -82,10 +84,9 @@ async def _type(pilot, command: str) -> None:
 
 
 def _reply(app: BedlamApp, command: str) -> list[str]:
-    """What the timeline said after the last echo of `command`."""
-    rows = [text for _, text, _ in app._timeline_rows]
-    last = max(i for i, text in enumerate(rows) if text == f"you › /{command}")
-    return rows[last + 1 :]
+    """What the last command said, wherever it said it; it must be `command`."""
+    assert app._last_command == f"/{command}"
+    return app._last_reply
 
 
 def test_before_anything_happens_the_commands_say_so() -> None:
@@ -286,3 +287,115 @@ def test_sudo_is_hidden_and_never_runs_what_follows() -> None:
 
     asyncio.run(scenario())
     assert "sudo" not in COMMANDS
+
+
+def _page(app: BedlamApp) -> list[str]:
+    return [strip.text for strip in app.query_one("#postmortem", RichLog).lines]
+
+
+@pytest.mark.parametrize("size", [SIZE, WIDE], ids=["82 minimum", "wide"])
+def test_the_run_ends_on_the_decided_trade_off_with_a_post_mortem_log(size) -> None:
+    async def scenario() -> None:
+        app = _app()
+        async with app.run_test(size=size) as pilot:
+            await _drive(app, pilot)
+            page = app.query_one("#postmortem", RichLog)
+            assert app.query_one("#tradeoff").display and page.display
+            assert not app.query_one("#system").display and not app.query_one("#body").display
+            assert page.has_focus
+            rows = [s.text for s in app.screen._compositor.render_strips()]
+            assert any("◀ you chose this" in row for row in rows)
+            assert any("cost shown live:" in row for row in rows)
+            before = len(app._timeline_rows)
+            for command in ("cycles", "cycle 1", "why 1", "calls", "cost", "help"):
+                await _type(pilot, command)
+            assert len(app._timeline_rows) == before, "replies leaked into the hidden timeline"
+            widest = max(strip.cell_length for strip in page.lines)
+            assert widest <= page.scrollable_content_region.width
+            assert "you › /cycles" in _page(app)
+
+    asyncio.run(scenario())
+
+
+def test_the_post_mortem_commands_tell_the_run_back() -> None:
+    async def scenario() -> None:
+        app = _app()
+        async with app.run_test(size=SIZE) as pilot:
+            await _drive(app, pilot)
+            await _type(pilot, "cycles")
+            cycles = _reply(app, "cycles")
+            assert [row.split()[0] for row in cycles] == ["c1", "c2", "tf"]
+            assert cycles[2].endswith(f"you chose A: {app._trade_off['options'][0]['title']}")
+            await _type(pilot, "cycle 1")
+            labels = [row.split()[0] for row in _reply(app, "cycle 1") if row[2] != " "]
+            for label in ("cycle", "searched", "routed", "pool", "picked", "injected",
+                          "under", "symptom", "patch", "after", "defends", "gaps"):  # fmt: skip
+                assert label in labels, label
+            await _type(pilot, "cycle 9")
+            assert _reply(app, "cycle 9") == ["  no cycle 9 in this run. try /cycle 1 or /cycle 2"]
+            await _type(pilot, "why 1")
+            named = [r for r in app._cycles[1]["routed"]["results"] if r["layer"]]
+            assert len(_reply(app, "why 1")) == 2 + len(named)
+            await _type(pilot, "diff 1")
+            assert _reply(app, "diff 1")[0].startswith("  patch: cycle1.diff (")
+            await _type(pilot, "calls")
+            calls = _reply(app, "calls")
+            sites = {record.site for record in app._models.records}
+            assert len(calls) == len(sites) + 2
+            assert calls[-2].split()[:2] == ["search", "Tavily"]
+            assert calls[-1].startswith("  total: ")
+            await _type(pilot, "cost")
+            labels = [row.split()[0] for row in _reply(app, "cost") if row[2] != " "]
+            assert labels[:4] == ["you", "you", "felt", "shown"]
+            assert labels[4:] == ["before", "under", "after"]
+            await _type(pilot, "cpu")
+            assert _reply(app, "cpu") == [
+                "  no cpu samples in this run: docker stats were not read"
+            ]
+            app._run_cpu = [{layer: 10.0 * i for layer in Layer} for i in range(20)]
+            await _type(pilot, "cpu")
+            assert len(_reply(app, "cpu")) == 2 + len(Layer) * 2
+
+    asyncio.run(scenario())
+
+
+def test_log_switches_between_the_page_and_the_run_log() -> None:
+    async def scenario() -> None:
+        app = _app()
+        async with app.run_test(size=SIZE) as pilot:
+            await _type(pilot, "log")
+            assert _reply(app, "log") == ["  the run log is already on screen"]
+            await _drive(app, pilot)
+            await _type(pilot, "zoom agent")
+            assert _reply(app, "zoom agent") == ["  /zoom works on the run log. /log shows it"]
+            await _type(pilot, "log")
+            assert app.query_one("#timeline").display and app.query_one("#body").display
+            assert not app.query_one("#tradeoff").display
+            assert app.query_one("#timeline").has_focus
+            await _type(pilot, "status")
+            assert "  run over" in _timeline(app)[-2]
+            await _type(pilot, "log")
+            assert app.query_one("#tradeoff").display and app.query_one("#postmortem").has_focus
+
+    asyncio.run(scenario())
+
+
+def test_while_choosing_the_strip_takes_replies_when_there_is_room() -> None:
+    async def scenario() -> None:
+        app = _app()
+        async with app.run_test(size=WIDE) as pilot:
+            for _ in range(2000):
+                if app.patches.waiting:
+                    await pilot.press("p")
+                if app.choices.waiting:
+                    break
+                await asyncio.sleep(0.01)
+            await pilot.pause(0.2)
+            assert app.query_one("#postmortem").display, "no strip at 200 x 45"
+            await _type(pilot, "cycles")
+            assert any("you › /cycles" in row for row in _page(app))
+            assert app.choices.waiting, "a command made the choice"
+            await pilot.press("a")
+            await pilot.pause(0.3)
+
+    asyncio.run(scenario())

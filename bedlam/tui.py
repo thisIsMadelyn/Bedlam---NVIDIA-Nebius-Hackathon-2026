@@ -108,8 +108,15 @@ _JESTER_COLOURS: Final = {
     "accent": ACCENT, "ink": INK, "muted": MUTED, "go": GO, "soft": _SOFT, "text": _TEXT,
 }  # fmt: skip
 _SPLASH_COLOURS: Final = {**_JESTER_COLOURS, "background": _BACKGROUND}
-# How many search results /why lists.
+# How many search results /why lists without a cycle; /why 1 lists them all.
 _WHY_RESULTS: Final = 3
+# The post-mortem log while the trade-off waits: 5 rows and its border. It
+# shows only when the options leave that much room.
+_STRIP_ROWS: Final = 7
+# Rows per container in /cpu's chart.
+_CPU_ROWS: Final = 2
+# Labels in /cycle and /cost: two spaces, the label, a space.
+_FIELD: Final = 10
 # How long the launch splash holds before the run starts. Any key skips it.
 # A completed run holds its last frame as long, then the end splash comes up.
 SPLASH_S: Final = 2.5
@@ -240,11 +247,17 @@ StatsSource = Callable[[], Awaitable[dict[Layer, ContainerStats]]]
 COMMANDS: Final = {
     "help": "list these commands",
     "status": "where the run is and what Bedlam is waiting for",
-    "why": "why this layer: Tavily weights and the results behind them",
-    "diff": "what Bedlam read in your last patch",
+    "cycles": "the run in one line per cycle, then the trade-off",
+    "cycle": "one cycle step by step: /cycle 1, /cycle 2",
+    "why": "why this layer: Tavily weights and results. /why 1: cycle 1",
+    "diff": "what Bedlam read in your patch. /diff 1: cycle 1's",
+    "calls": "model calls per call site: model, tokens, latency",
+    "cost": "what your choice cost, measured live",
+    "cpu": "the run's CPU per container, fault windows marked",
     "seed": "the root seed, and how to run this again",
     "grep": "show only timeline lines with <text>; /grep alone shows all",
     "zoom": "one log fills the screen: /zoom timeline|agent, /zoom ends it",
+    "log": "switch between the trade-off page and the run log",
     "copy": "copy the last command's output; /copy timeline: what's shown",
     "save": "write the timeline and the model log to a text file",
     "shot": "save a screenshot of the screen as SVG",
@@ -258,6 +271,7 @@ ZOOMS: Final = ("timeline", "agent")
 # arguments that have a fixed set of values.
 _COMPLETIONS: Final = [
     *(f"/{name}" for name in COMMANDS),
+    *(f"/cycle {n}" for n in range(1, MAX_CYCLES + 1)),
     *(f"/zoom {log}" for log in ZOOMS),
     "/copy timeline",
     "/choose a",
@@ -384,9 +398,19 @@ class BedlamApp(App[int]):
         # command echoed or replied with are pinned: a filter never hides them.
         self._grep: str | None = None
         self._pinned: set[int] = set()
-        self._replying = False
+        # While a command runs: what it has said so far. None otherwise.
+        self._replying: list[str] | None = None
         # What the last command said, for /copy.
         self._last_reply: list[str] = []
+        self._last_command = ""
+        # The run as the post-mortem reads it: each cycle's events by kind,
+        # and the events outside a cycle (baseline, trade-off, cost).
+        self._cycles: dict[int, dict[str, dict[str, Any]]] = {}
+        self._run_events: dict[str, dict[str, Any]] = {}
+        # The run completed and its trade-off was decided: the trade-off page
+        # stays, with the post-mortem log under it.
+        self._decided = False
+        self._page_rows: list[tuple[str | Text, str]] = []
         self._shots = 0
         # Where the run's trace is written; /save and /shot write beside it.
         self.trace_file: Path | None = None
@@ -407,6 +431,10 @@ class BedlamApp(App[int]):
             tradeoff = Static(id="tradeoff", classes="panel")
             tradeoff.border_title = "TRADE-OFF · you choose, Bedlam does not"
             yield tradeoff
+            page = RichLog(id="postmortem", classes="panel", wrap=False)
+            page.border_title = "POST-MORTEM · /cycles to start, /help for the rest"
+            page.display = False
+            yield page
             system = Static(id="system", classes="panel")
             system.border_title = f"{APP} · health of each part"
             yield system
@@ -448,7 +476,7 @@ class BedlamApp(App[int]):
             return
         self.query_one("#splash").display = False
         self.query_one("#frame").display = True
-        self.query_one("#timeline", RichLog).focus()
+        self._home().focus()
         self.call_after_refresh(self._render_chrome)
         if not self._started:
             self._start()
@@ -480,9 +508,15 @@ class BedlamApp(App[int]):
         self._drain_calls()
         if self.exit_code != 0:
             self.now = STOPPED
-        elif self.splash_s > 0:
-            self.set_timer(self.splash_s, self.show_moral)
+        else:
+            if "chosen" in self._run_events:
+                self._decided = True
+                self.query_one("#frame").add_class("-escalation")
+            if self.splash_s > 0:
+                self.set_timer(self.splash_s, self.show_moral)
         self._render_chrome()
+        if not self.splashing:
+            self._home().focus()
 
     # -- inputs ---------------------------------------------------------------
 
@@ -498,8 +532,19 @@ class BedlamApp(App[int]):
     def action_leave_command(self) -> None:
         line = self.query_one("#command", Input)
         line.value = ""
+        self._home().focus()
+
+    def _home(self) -> RichLog:
+        """The log that holds focus between commands: the one on screen."""
+        if self._decided and self.query_one("#frame").has_class("-escalation"):
+            return self.query_one("#postmortem", RichLog)
         zoomed_agent = self.query_one("#body").has_class("-zoom-agent")
-        self.query_one("#agent" if zoomed_agent else "#timeline", RichLog).focus()
+        return self.query_one("#agent" if zoomed_agent else "#timeline", RichLog)
+
+    def _on_page(self) -> bool:
+        """Whether command replies go to the post-mortem log."""
+        frame = self.query_one("#frame")
+        return frame.has_class("-escalation") and self.query_one("#postmortem").display
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         text = event.value.strip()
@@ -508,8 +553,8 @@ class BedlamApp(App[int]):
             return
         name, *rest = text.lstrip("/").split(maxsplit=1) or [""]
         name, arg = name.lower(), rest[0].strip() if rest else ""
-        start = len(self._timeline_rows)
-        self._replying = True
+        said: list[str] = []
+        self._replying = said
         try:
             self._say(f"you › {text}", style=f"bold {_TEXT}")
             if name == "sudo":
@@ -521,9 +566,9 @@ class BedlamApp(App[int]):
             else:
                 self._say(f"unknown command /{name}. /help lists them", style=_SOFT)
         finally:
-            self._replying = False
+            self._replying = None
         if name != "copy":
-            self._last_reply = [text for _, text, _ in self._timeline_rows[start + 1 :]]
+            self._last_command, self._last_reply = text, said[1:]
 
     def _command_help(self, arg: str) -> None:
         for name, about in COMMANDS.items():
@@ -551,40 +596,217 @@ class BedlamApp(App[int]):
         else:
             self._say("  no fault live", style=_SOFT)
 
+    def _cycle_arg(self, arg: str, command: str) -> int | None:
+        """The cycle `arg` names, or the latest; says why when there is none."""
+        seen = sorted(self._cycles)
+        if not seen:
+            self._say("  no cycle has started yet", style=_SOFT)
+            return None
+        if not arg:
+            return seen[-1]
+        if arg.isdigit() and int(arg) in self._cycles:
+            return int(arg)
+        named = " or ".join(f"/{command} {n}" for n in seen)
+        self._say(f"  no cycle {arg} in this run. try {named}", style=_SOFT)
+        return None
+
     def _command_why(self, arg: str) -> None:
-        if self._routed is None:
+        routed = self._routed
+        if arg:
+            cycle = self._cycle_arg(arg, "why")
+            if cycle is None:
+                return
+            routed = self._cycles[cycle].get("routed")
+        if routed is None:
             self._say("  nothing routed yet. /why works once Bedlam has searched", style=_SOFT)
             return
-        routing = self._routed["routing"]
+        routing = routed["routing"]
         weights = " · ".join(f"{k} {v:.2f}" for k, v in routing["weights"].items())
-        head = f"  routed to {self._routed['specialist']} ({routing['basis']})"
+        head = f"  routed to {routed['specialist']} ({routing['basis']})"
         self._say(f"{head}: {weights}" if weights else head, style=_SOFT)
         if routing["basis"] == "symptom":
             self._say("  no result named a layer, so the symptom's layer decided", style=_SOFT)
         elif routing["basis"] == "seeded":
             self._say("  nothing named a layer, so the root seed decided", style=_SOFT)
-        named = [r for r in self._routed["results"] if r["layer"]]
+        named = [r for r in routed["results"] if r["layer"]]
         if not named:
             return
         self._say("  results behind it, strongest first:", style=_SOFT)
-        for result in sorted(named, key=lambda r: -r["score"])[:_WHY_RESULTS]:
+        for result in sorted(named, key=lambda r: -r["score"])[: None if arg else _WHY_RESULTS]:
             where = re.sub(r"^https?://(www\.)?", "", result["url"])
             text = f"    {result['layer']:<5} {result['score']:.2f}  {where}  {result['title']}"
             self._say(text, style=_SOFT)
 
     def _command_diff(self, arg: str) -> None:
-        if self._patch is None:
+        patch, analysis = self._patch, self._analysis
+        if arg:
+            cycle = self._cycle_arg(arg, "diff")
+            if cycle is None:
+                return
+            steps = self._cycles[cycle]
+            patch = steps.get("patched", {}).get("patch")
+            analysis = steps.get("analysed", {}).get("analysis")
+        if patch is None:
             self._say("  no patch read yet", style=_SOFT)
             return
-        self._say(f"  patch: {self._patch['source']} ({self._patch['chars']} chars)", style=_SOFT)
-        if self._analysis is None:
+        self._say(f"  patch: {patch['source']} ({patch['chars']} chars)", style=_SOFT)
+        if analysis is None:
             self._say("  still reading it", style=_SOFT)
             return
-        defended = ", ".join(f"{d['layer']}/{d['kind']}" for d in self._analysis["defended"])
+        defended = ", ".join(f"{d['layer']}/{d['kind']}" for d in analysis["defended"])
         self._say(f"  defends: {defended or 'none'}", style=_SOFT)
-        gaps = "; ".join(self._analysis["gaps"]) or "none found"
-        for line in wrap(f"gaps: {gaps}", indent=6, width=self._say_width() - 2):
+        gaps = "; ".join(analysis["gaps"]) or "none found"
+        for line in wrap(f"gaps: {gaps}", indent=6, width=self._reply_width() - 2):
             self._say(f"  {line}", style=_SOFT)
+
+    # -- post-mortem ------------------------------------------------------------
+
+    def _field(self, label: str, value: str) -> None:
+        """One labelled line of /cycle or /cost, the value wrapped under itself."""
+        indent = 2 + _FIELD + 1
+        lines = textwrap.wrap(" ".join(value.split()), width=self._reply_width() - indent)
+        for i, line in enumerate(lines or [""]):
+            head = f"  {label:<{_FIELD}} " if i == 0 else " " * indent
+            self._say(head + line, style=_SOFT)
+
+    def _command_cycles(self, arg: str) -> None:
+        if not self._cycles:
+            self._say("  no cycle has started yet", style=_SOFT)
+            return
+        for cycle, steps in sorted(self._cycles.items()):
+            fault = steps.get("injecting", {}).get("fault", "no fault yet")
+            symptom = steps.get("symptom", {}).get("symptom")
+            seen = "no symptom yet"
+            if symptom is not None:
+                seen = symptom["kind"] + (f" on {symptom['layer']}" if symptom["layer"] else "")
+            analysis = steps.get("analysed", {}).get("analysis")
+            read = "patch not read yet"
+            if analysis is not None:
+                defended = ", ".join(f"{d['layer']}/{d['kind']}" for d in analysis["defended"])
+                read = f"defends {defended or 'nothing'} · {len(analysis['gaps'])} gaps"
+            self._say(f"  c{cycle}  {fault} · {seen} → {read}", style=_SOFT)
+        if self._trade_off is not None:
+            chosen = self._run_events.get("chosen")
+            outcome = "waiting for your choice"
+            if chosen is not None:
+                outcome = f"you chose {chosen['choice'].upper()}: {chosen['option']['title']}"
+            self._say(f"  tf  {self._trade_off['axis']} → {outcome}", style=_SOFT)
+
+    def _command_cycle(self, arg: str) -> None:
+        cycle = self._cycle_arg(arg, "cycle")
+        if cycle is None:
+            return
+        steps = self._cycles[cycle]
+        self._say(f"  cycle {cycle} of {MAX_CYCLES}", style=f"bold {ACCENT}")
+        if "searching" in steps:
+            queries = " · ".join(q["text"] for q in steps["searching"]["queries"])
+            self._field("searched", queries)
+        if "routed" in steps:
+            routed = steps["routed"]
+            routing = routed["routing"]
+            weights = " · ".join(f"{k} {v:.2f}" for k, v in routing["weights"].items())
+            basis = f"{routing['basis']}: {weights}" if weights else routing["basis"]
+            self._field(
+                "routed", f"{routing['layer']} ({basis}), {routed['specialist']} specialist"
+            )
+        if "selected" in steps:
+            selection = steps["selected"]["selection"]
+            eligible = selection["eligible"]
+            self._field("pool", f"{len(eligible)} eligible: {', '.join(eligible)}")
+            for fault, reason in selection["rejected"].items():
+                self._field("passed on", f"{fault}: {reason}")
+            rationale = selection.get("rationale") or ""
+            picked = selection["fault"]["id"]
+            self._field("picked", f"{picked}. {rationale}" if rationale else picked)
+        if "injecting" in steps:
+            injected = steps["injecting"]
+            blast = ", ".join(injected["blast_radius"])
+            self._field("injected", f"{injected['fault']} on {injected['layer']} · blast {blast}")
+        if "probed" in steps:
+            self._field("under it", _health_text(steps["probed"]["snapshot"]))
+        if "symptom" in steps:
+            symptom = steps["symptom"]["symptom"]
+            where = f" on {symptom['layer']}" if symptom["layer"] else ""
+            self._field("symptom", f"{symptom['kind']}{where}. {symptom['summary']}")
+        if "patched" in steps:
+            patch = steps["patched"]["patch"]
+            self._field("patch", f"{patch['source']} ({patch['chars']} chars)")
+        if "fault_removed" in steps:
+            self._field("after", _health_text(steps["fault_removed"]["snapshot"]))
+        if "analysed" in steps:
+            analysis = steps["analysed"]["analysis"]
+            defended = ", ".join(f"{d['layer']}/{d['kind']}" for d in analysis["defended"])
+            self._field("defends", defended or "nothing")
+            self._field("gaps", "; ".join(analysis["gaps"]) or "none found")
+
+    def _command_calls(self, arg: str) -> None:
+        records = self._models.records if self._models is not None else []
+        searches = self._search.calls if self._search is not None else []
+        if not records and not searches:
+            self._say("  no model or search calls yet", style=_SOFT)
+            return
+        sites: dict[str, list[CallRecord]] = {}
+        for record in records:
+            sites.setdefault(record.site, []).append(record)
+        for site, group in sites.items():
+            models = "/".join(sorted({LABELS.get(r.model, "?") for r in group}))
+            tokens = sum((r.prompt_tokens or 0) + (r.completion_tokens or 0) for r in group)
+            latency = sum(r.latency_ms for r in group) / len(group)
+            line = f"  {site:<24} {models:<10} {len(group):>2}× {tokens:>6} tok {latency:>6.0f}ms"
+            fallbacks = sum(r.fallback for r in group)
+            failed = sum(r.outcome != "ok" for r in group)
+            extra = [f"{fallbacks} fallback"] * bool(fallbacks) + [f"{failed} failed"] * bool(
+                failed
+            )
+            self._say(" · ".join([line, *extra]), style=_SOFT)
+        if searches:
+            cached = sum(c.cached for c in searches)
+            latency = sum(c.latency_ms for c in searches) / len(searches)
+            head = f"  {'search':<24} {'Tavily':<10} {len(searches):>2}×"
+            self._say(f"{head} {cached:>3} cached {latency:>6.0f}ms", style=_SOFT)
+        self._say(f"  total: {self._usage()}", style=_SOFT)
+
+    def _command_cost(self, arg: str) -> None:
+        chosen = self._run_events.get("chosen")
+        if chosen is None:
+            self._say("  no choice made yet. the cost shows once you pick A or B", style=_SOFT)
+            return
+        option = chosen["option"]
+        self._field("you chose", f"{chosen['choice'].upper()}: {option['title']}")
+        self._field("you pay", option["cost"])
+        self._field("felt when", option["felt_when"])
+        showing = self._run_events.get("showing_cost")
+        if showing is not None:
+            blast = ", ".join(showing["blast_radius"])
+            self._field("shown as", f"{showing['fault']} on {showing['layer']} · blast {blast}")
+        last = self._cycles.get(max(self._cycles, default=0), {}).get("fault_removed")
+        for label, event in (
+            ("before", last),
+            ("under it", self._run_events.get("cost_shown")),
+            ("after", self._run_events.get("cost_removed")),
+        ):
+            if event is not None:
+                self._field(label, _health_text(event["snapshot"]))
+
+    def _command_cpu(self, arg: str) -> None:
+        if not self._run_cpu:
+            self._say("  no cpu samples in this run: docker stats were not read", style=_SOFT)
+            return
+        for line in cpu_chart(self._run_cpu, self._windows, self._reply_width(), _CPU_ROWS):
+            self._say(line)
+
+    def _command_log(self, arg: str) -> None:
+        frame = self.query_one("#frame")
+        if self._trade_off is None or not (self._decided or self.choices.waiting):
+            self._say("  the run log is already on screen", style=_SOFT)
+            return
+        frame.toggle_class("-escalation")
+        self._render_chrome()
+        self._home().focus()
+        if frame.has_class("-escalation"):
+            self._say("  back on the trade-off page", style=_SOFT)
+        else:
+            self._say("  the run log. /log goes back to the trade-off", style=_SOFT)
 
     def _command_seed(self, arg: str) -> None:
         seed = self.root_seed
@@ -607,6 +829,9 @@ class BedlamApp(App[int]):
             self._say(f"  {hits} lines match. /grep alone shows all", style=_SOFT)
 
     def _command_zoom(self, arg: str) -> None:
+        if self.query_one("#frame").has_class("-escalation"):
+            self._say("  /zoom works on the run log. /log shows it", style=_SOFT)
+            return
         log = arg.lower()
         if log and log not in ZOOMS:
             self._say("zoom what? /zoom timeline or /zoom agent", style=_SOFT)
@@ -652,6 +877,8 @@ class BedlamApp(App[int]):
             MODELS,
             *agent,
         ]
+        if self._page_rows:
+            text += ["", "POST-MORTEM", *(str(line) for line, _ in self._page_rows)]
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("\n".join(text) + "\n", encoding="utf-8")
         self._say(f"  saved {_shown_path(path)}", style=_SOFT)
@@ -704,6 +931,10 @@ class BedlamApp(App[int]):
         self._drain_calls()
         if kind == "cycle_started":
             self._cycle = fields["cycle"]
+        if fields.get("cycle"):
+            self._cycles.setdefault(fields["cycle"], {})[kind] = fields
+        elif kind != "probing":
+            self._run_events[kind] = fields
         self.now = guidance(kind, fields, real=self.real) or self.now
         handler = getattr(self, f"_on_{kind}", None)
         if handler is not None:
@@ -806,6 +1037,8 @@ class BedlamApp(App[int]):
         for item in self._trade_off["options"]:
             self._say(f"  {item['key'].upper()}  {item['title']}")
         self.query_one("#frame").add_class("-escalation")
+        # The strip's room depends on the panel's height, known after layout.
+        self.call_after_refresh(self._render_chrome)
 
     def _on_chosen(self, fields: dict[str, Any]) -> None:
         self.query_one("#frame").remove_class("-escalation")
@@ -887,7 +1120,8 @@ class BedlamApp(App[int]):
         """Redraw both logs if their width changed (resize, layout switch)."""
         timeline = self.query_one("#timeline", RichLog)
         agent = self.query_one("#agent", RichLog)
-        widths = (_inner(timeline), _inner(agent))
+        page = self.query_one("#postmortem", RichLog)
+        widths = (_inner(timeline), _inner(agent), _inner(page))
         if widths == self._flowed:
             return
         self._flowed = widths
@@ -895,6 +1129,9 @@ class BedlamApp(App[int]):
         agent.clear()
         for row in self._agent_rows:
             agent.write(self._agent_line(*row, width=widths[1]))
+        page.clear()
+        for text, style in self._page_rows:
+            page.write(_fitted(text, widths[2], style))
 
     def _redraw_timeline(self) -> None:
         timeline = self.query_one("#timeline", RichLog)
@@ -956,7 +1193,11 @@ class BedlamApp(App[int]):
         self.query_one("#footer", Static).update(keys)
 
         self._render_system()
-        if self._trade_off is not None:
+        if not self.query_one("#frame").has_class("-escalation"):
+            self.query_one("#postmortem").display = False
+        elif self._decided:
+            self._render_decided()
+        elif self._trade_off is not None:
             self._render_trade_off()
 
     def _render_trade_off(self) -> None:
@@ -988,6 +1229,16 @@ class BedlamApp(App[int]):
             body.append(
                 fit(live, width - _SIDE_INDENT - len(item["felt_when"])) + "\n", style=_SOFT
             )
+        # The post-mortem strip, when the options leave room for it.
+        strip = self.query_one("#postmortem", RichLog)
+        room = panel.outer_size.height + (strip.outer_size.height if strip.display else 0)
+        fits = room - body.plain.count("\n") - 2 >= _STRIP_ROWS
+        panel.styles.height = "1fr"
+        strip.styles.height = _STRIP_ROWS
+        panel.border_subtitle = "" if fits else "replies: /log"
+        if strip.display != fits:
+            strip.display = fits
+            self.call_after_refresh(self._render_chrome)
         # The run so far, in whatever height the options leave. Real samples
         # only: without any, there is no chart.
         spare = panel.content_region.height - body.plain.count("\n")
@@ -997,6 +1248,39 @@ class BedlamApp(App[int]):
             for line in cpu_chart(self._run_cpu, self._windows, width, rows):
                 body.append_text(line)
                 body.append("\n")
+        panel.update(body)
+
+    def _render_decided(self) -> None:
+        """The trade-off page once the run is over: the choice, its cost, the record."""
+        assert self._trade_off is not None
+        panel = self.query_one("#tradeoff", Static)
+        page = self.query_one("#postmortem", RichLog)
+        panel.styles.height = "auto"
+        page.styles.height = "1fr"
+        page.display = True
+        panel.border_title = "TRADE-OFF · decided, by you"
+        panel.border_subtitle = ""
+        width = _inner(panel)
+        chosen = self._run_events["chosen"]["choice"]
+        body = Text()
+        body.append(fit(self._trade_off["axis"], width) + "\n", style=f"bold {ACCENT}")
+        for item in self._trade_off["options"]:
+            mine = item["key"] == chosen
+            badge = f"bold {_BACKGROUND} on {GO}" if mine else f"{_TEXT} on {MUTED}"
+            mark = "  ◀ you chose this" if mine else ""
+            body.append(f" {item['key'].upper()} ", style=badge)
+            room = width - 4 - len(mark)
+            body.append(" " + fit(item["title"], room), style="bold" if mine else _SOFT)
+            body.append(mark + "\n", style=f"bold {GO}")
+        shown = self._run_events.get("cost_shown")
+        showing = self._run_events.get("showing_cost")
+        if shown is not None and showing is not None:
+            cost = f"cost shown live: {showing['fault']} · {_health_text(shown['snapshot'])}"
+            body.append(fit(cost, width) + "\n", style=DAMAGE)
+        if self.decision_file is not None:
+            record = f"decision record: {_shown_path(self.decision_file)}"
+            body.append(fit(record, width) + "\n", style=GO)
+        body.rstrip()
         panel.update(body)
 
     def _render_system(self) -> None:
@@ -1088,20 +1372,28 @@ class BedlamApp(App[int]):
             return  # shutting down: the panels are already gone
 
     def _health_line(self) -> str:
-        parts = []
-        for layer, result in self._health.items():
-            latency = result["latency_ms"]
-            value = f"{latency:.0f}ms" if latency is not None else "-"
-            parts.append(f"{layer} {result['status']} {value}")
-        return ", ".join(parts)
+        return _health_text(self._health)
 
     def _say_width(self) -> int:
         return _inner(self.query_one("#timeline", RichLog)) - 3
 
-    def _say(self, text: str, style: str = "") -> None:
+    def _reply_width(self) -> int:
+        """Columns a command reply may use, wherever it is going."""
+        if self._on_page():
+            return _inner(self.query_one("#postmortem", RichLog))
+        return self._say_width()
+
+    def _say(self, text: str | Text, style: str = "") -> None:
+        if self._replying is not None:
+            self._replying.append(str(text))
+            if self._on_page():
+                self._page_rows.append((text, style))
+                page = self.query_one("#postmortem", RichLog)
+                page.write(_fitted(text, _inner(page), style))
+                return
         tag = "tf" if self._escalated else f"c{self._cycle}" if self._cycle else "--"
         row = (tag, text, style)
-        if self._replying:
+        if self._replying is not None:
             self._pinned.add(len(self._timeline_rows))
         self._timeline_rows.append(row)
         if self._shown(len(self._timeline_rows) - 1):
@@ -1114,9 +1406,9 @@ class BedlamApp(App[int]):
         tag, text, _ = self._timeline_rows[index]
         return self._grep in f"{tag} {text}".lower()
 
-    def _timeline_line(self, cycle: str, text: str, style: str) -> Text:
+    def _timeline_line(self, cycle: str, text: str | Text, style: str) -> Text:
         line = Text.assemble((f"{cycle} ", MUTED))
-        line.append(fit(text, self._say_width()), style=style)
+        line.append_text(_fitted(text, self._say_width(), style))
         return line
 
 
@@ -1137,6 +1429,25 @@ class Splash(Static, can_focus=True):
         event.stop()
         event.prevent_default()
         self.app.end_splash()  # type: ignore[attr-defined]
+
+
+def _fitted(text: str | Text, width: int, style: str = "") -> Text:
+    """A log line cut to `width`: plain text styled, or styled text as it is."""
+    if isinstance(text, Text):
+        line = text.copy()
+        line.truncate(width, overflow="ellipsis")
+        return line
+    return Text(fit(text, width), style=style)
+
+
+def _health_text(snapshot: dict[str, dict[str, Any]]) -> str:
+    """One probe snapshot in a line: api ok 12ms, db slow 812ms, cache ok 2ms."""
+    parts = []
+    for layer, result in snapshot.items():
+        latency = result["latency_ms"]
+        value = f"{latency:.0f}ms" if latency is not None else "-"
+        parts.append(f"{layer} {result['status']} {value}")
+    return ", ".join(parts)
 
 
 def _inner(widget: Widget) -> int:

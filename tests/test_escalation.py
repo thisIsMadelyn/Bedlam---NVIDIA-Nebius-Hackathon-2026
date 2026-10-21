@@ -187,6 +187,14 @@ def test_the_trade_off_takes_the_frame_and_fits_at_82_columns() -> None:
             ):
                 assert text in panel, text
             assert "…" not in panel.split("TRADE-OFF", 1)[1], "a trade-off line was cut"
+            shown: list[bool] = []
+            on_cost_shown = app._on_cost_shown
+
+            def watch(fields) -> None:
+                shown.append(app.query_one("#system").display)
+                on_cost_shown(fields)
+
+            app._on_cost_shown = watch  # type: ignore[method-assign]
             await pilot.press("a")
             for _ in range(500):
                 if app.exit_code is not None:
@@ -194,7 +202,8 @@ def test_the_trade_off_takes_the_frame_and_fits_at_82_columns() -> None:
                 await asyncio.sleep(0.01)
             await pilot.pause(0.2)
             assert app.exit_code == 0
-            assert app.query_one("#system").display, "YOUR APP must show the cost"
+            assert shown == [True], "YOUR APP must show the cost"
+            assert app.query_one("#tradeoff").display, "the run must end on the trade-off"
             assert app.now.title == "DONE"
 
     asyncio.run(scenario())

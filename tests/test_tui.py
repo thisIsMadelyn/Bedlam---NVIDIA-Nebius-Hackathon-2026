@@ -78,7 +78,10 @@ def test_a_full_run_fills_the_terminal_and_never_clips(tmp_path: Path, size) -> 
         app = _app()
         async with app.run_test(size=size) as pilot:
             await _drive(app, pilot, tmp_path / "tui.svg")
-            for log in app.query(RichLog):
+            assert app.query_one("#tradeoff").display, "the run must end on the trade-off"
+            await pilot.press("slash", *"log", "enter")  # back to the run log
+            await pilot.pause(0.2)
+            for log in (app.query_one("#timeline", RichLog), app.query_one("#agent", RichLog)):
                 inner = log.scrollable_content_region.width
                 widest = max((strip.cell_length for strip in log.lines), default=0)
                 assert widest <= inner, f"{log.id} line is {widest} cells, room for {inner}"

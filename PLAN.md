@@ -355,6 +355,23 @@ Dropped: `/patched` (that's `/patch`), `/trace` (the AGENT panel shows it),
 no command may make the trade-off decision on the developer's behalf
 (`/choose a` is fine, `/auto` is not). Every line fits 82 columns.
 
+### Post-mortem page
+
+Approved 21 Oct, before Phase 5. A completed run ends on the trade-off page,
+decided: the choice marked, the cost shown live, the decision record, and a
+POST-MORTEM log under it where every command replies. It stays until Q.
+While the trade-off waits, the same log shows as a 5-row strip when the
+options leave room. Commands, all read from the run's own events:
+
+- `/cycles` — one line per cycle, then the trade-off
+- `/cycle N` — one cycle step by step: search, routing, pool, pick, fault,
+  symptom, patch, analysis
+- `/why N`, `/diff N` — the existing commands, for any cycle
+- `/calls` — model calls per call site, Tavily, totals
+- `/cost` — the chosen option's cost, health before, under and after it
+- `/cpu` — the run's CPU chart; the decided page has no room for it standing
+- `/log` — switch between the trade-off page and the run log
+
 ### End splash
 
 Approved 21 Oct, before Phase 5. When a run completes, the launch splash comes
