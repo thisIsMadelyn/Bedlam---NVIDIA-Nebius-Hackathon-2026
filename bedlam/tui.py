@@ -76,7 +76,7 @@ from bedlam.search.tavily import SearchCall, SearchClient
 from bedlam.stats import ContainerStats, StatsUnavailable
 from bedlam.stats import sample as sample_stats
 from bedlam.topology import Layer
-from bedlam.voice import Voice, event_key
+from bedlam.voice import MORAL, SIGN_OFF, Voice, event_key
 
 # The minimum width. Every template is checked to fit at this size.
 WIDTH: Final = 82
@@ -107,6 +107,7 @@ _JESTER_COLOURS: Final = {
 }  # fmt: skip
 _SPLASH_COLOURS: Final = {**_JESTER_COLOURS, "background": _BACKGROUND}
 # How long the launch splash holds before the run starts. Any key skips it.
+# A completed run holds its last frame as long, then the end splash comes up.
 SPLASH_S: Final = 2.5
 
 _BAR_MIN: Final = 20
@@ -307,8 +308,10 @@ class BedlamApp(App[int]):
         splash_s: float = 0.0,
     ) -> None:
         super().__init__()
-        # The jester and the wordmark before the run starts; 0 skips it.
+        # The jester and the wordmark before the run starts, and with the
+        # moral after it completes; 0 skips both.
         self.splash_s = splash_s
+        self._started = False
         self.root_seed = root_seed
         # Real patch mode: the developer writes the fix and P reads git diff.
         self.real = real
@@ -397,16 +400,27 @@ class BedlamApp(App[int]):
         return self.query_one("#splash").display
 
     def end_splash(self) -> None:
-        """Swap the splash for the frame and start the run. Runs once."""
+        """Swap the splash for the frame; the first time, start the run."""
         if not self.splashing:
             return
         self.query_one("#splash").display = False
         self.query_one("#frame").display = True
         self.query_one("#timeline", RichLog).focus()
         self.call_after_refresh(self._render_chrome)
-        self._start()
+        if not self._started:
+            self._start()
+
+    def show_moral(self) -> None:
+        """The end splash: the jester again, with the moral. Any key leaves it."""
+        below = ((MORAL, f"bold italic {_TEXT}"), (SIGN_OFF, _SOFT))
+        splash = self.query_one("#splash", Splash)
+        splash.update(jester.splash(_SPLASH_COLOURS, below))
+        splash.display = True
+        self.query_one("#frame").display = False
+        splash.focus()
 
     def _start(self) -> None:
+        self._started = True
         self.run_worker(self._run(), exclusive=True)
         if self._stats is not None:
             self.run_worker(self._poll_stats(), group="stats")
@@ -423,6 +437,8 @@ class BedlamApp(App[int]):
         self._drain_calls()
         if self.exit_code != 0:
             self.now = STOPPED
+        elif self.splash_s > 0:
+            self.set_timer(self.splash_s, self.show_moral)
         self._render_chrome()
 
     # -- inputs ---------------------------------------------------------------
@@ -892,7 +908,7 @@ class BedlamApp(App[int]):
 
 
 class Splash(Static, can_focus=True):
-    """The launch splash. It holds focus, so any key skips it, and only that."""
+    """The launch and end splash. It holds focus, so any key leaves it, and only that."""
 
     def on_key(self, event: events.Key) -> None:
         event.stop()

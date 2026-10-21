@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Final
 
+from rich.cells import cell_len
 from rich.text import Text
 
 # 9 cells wide, 3 rows: exactly the NOW box's inner height.
@@ -129,17 +130,22 @@ SPLASH_WIDTH: Final = 34
 SPLASH_HEIGHT: Final = 15 + 1 + len(_WORDMARK)
 
 
-def splash(colours: dict[str, str]) -> Text:
+def splash(colours: dict[str, str], below: tuple[tuple[str, str], ...] = ()) -> Text:
     """The big jester with BEDLAM centred underneath, SPLASH_WIDTH wide.
 
     `colours` maps the roles of `render` plus background, the screen's own
-    colour, which the eyes and the grin are cut out of.
+    colour, which the eyes and the grin are cut out of. `below` adds lines
+    of (text, style) after a blank line; the whole splash is centred on the
+    widest of them and the art.
     """
+    width = max([SPLASH_WIDTH, *(cell_len(line) for line, _ in below)])
+    margin = " " * ((width - SPLASH_WIDTH) // 2)
     rows = _SPLASH_PIXELS.strip("\n").split("\n")
     if len(rows) % 2:
         rows.append("." * SPLASH_WIDTH)
     art = Text()
     for top, bottom in zip(rows[0::2], rows[1::2], strict=True):
+        art.append(margin)
         for upper, lower in zip(top, bottom, strict=True):
             fg, bg = _PIXEL_ROLES.get(upper), _PIXEL_ROLES.get(lower)
             if fg and bg:
@@ -150,8 +156,13 @@ def splash(colours: dict[str, str]) -> Text:
                 art.append(" ")
         art.append("\n")
     art.append("\n")
-    indent = " " * ((SPLASH_WIDTH - len(_WORDMARK[0])) // 2)
+    indent = margin + " " * ((SPLASH_WIDTH - len(_WORDMARK[0])) // 2)
     art.append("\n".join(indent + line for line in _WORDMARK), style=f"bold {colours['accent']}")
+    if below:
+        art.append("\n")
+    for line, style in below:
+        art.append("\n" + " " * ((width - cell_len(line)) // 2))
+        art.append(line, style=style)
     return art
 
 

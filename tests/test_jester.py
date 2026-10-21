@@ -47,3 +47,14 @@ def test_the_splash_is_the_jester_with_the_wordmark_centred_under_it() -> None:
     assert rows[15] == ""
     left = len(wordmark[0]) - len(wordmark[0].lstrip())
     assert left == (jester.SPLASH_WIDTH - len(wordmark[0].strip())) // 2
+
+
+def test_lines_below_the_wordmark_widen_the_splash_and_everything_stays_centred() -> None:
+    colours = {**COLOURS, "background": "#000000"}
+    moral, sign_off = "a line wider than the jester is, by some way", "short"
+    plain = jester.splash(colours).plain.split("\n")
+    rows = jester.splash(colours, ((moral, ""), (sign_off, "dim"))).plain.split("\n")
+    assert len(rows) == jester.SPLASH_HEIGHT + 3
+    margin = (len(moral) - jester.SPLASH_WIDTH) // 2
+    assert rows[: jester.SPLASH_HEIGHT] == [" " * margin + row if row else row for row in plain]
+    assert rows[-3:] == ["", moral, " " * ((len(moral) - len(sign_off)) // 2) + sign_off]

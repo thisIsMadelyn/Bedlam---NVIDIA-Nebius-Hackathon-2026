@@ -134,6 +134,12 @@ QUOTES: Final[dict[str, str]] = {
 }
 
 
+# The jester's last word, on the end splash once a run completes. Fixed, not
+# picked: every completed run ends on the same moral.
+MORAL: Final = "it was never stable. you just stopped looking."
+SIGN_OFF: Final = "same time next sprint."
+
+
 def _refine(kind: str, fields: dict[str, Any]) -> tuple[str | None, dict[str, Any]]:
     """The specific key for this event and the values its templates use."""
     if kind == "cycle_started":

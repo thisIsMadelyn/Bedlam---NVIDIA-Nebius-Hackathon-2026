@@ -24,6 +24,7 @@ from bedlam.search.manifest import load_manifest
 from bedlam.search.tavily import SearchClient
 from bedlam.trace import Trace
 from bedlam.tui import ACCENT, WIDTH, BedlamApp, GatedPatchSource
+from bedlam.voice import MORAL, SIGN_OFF
 
 SIZE = (WIDTH, 30)
 WIDE = (200, 45)
@@ -233,6 +234,45 @@ def test_the_splash_is_centred_and_holds_the_run_until_it_ends(size) -> None:
             await pilot.pause(0.4)
             assert not app.splashing and started
             assert app.query_one("#frame").display
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("size", [SIZE, WIDE], ids=["82 minimum", "wide"])
+def test_a_completed_run_ends_on_the_moral_and_a_key_returns_to_the_frame(size) -> None:
+    async def scenario() -> None:
+        app = _app()
+        async with app.run_test(size=size) as pilot:
+            app.splash_s = 0.1  # past the launch splash: only the end one shows
+            await _drive(app, pilot)
+            assert app.splashing and not app.query_one("#frame").display
+            rows = [s.text for s in app.screen._compositor.render_strips()]
+            art = [row for row in rows if row.strip()]
+            assert art[-2].strip() == MORAL and art[-1].strip() == SIGN_OFF
+            assert all(len(row.rstrip()) <= size[0] for row in rows), "the moral clips"
+            left = min(len(row) - len(row.lstrip()) for row in art)
+            right = min(len(row) - len(row.rstrip()) for row in art)
+            assert abs(left - right) <= 1, "not centred left to right"
+            await pilot.press("q")
+            await pilot.pause(0.1)
+            assert not app.splashing and app.query_one("#frame").display
+            assert app.is_running, "the key that left the moral also quit"
+            baselines = [row for row in app._timeline_rows if row[1].startswith("baseline:")]
+            assert len(baselines) == 1, "leaving the moral started a second run"
+
+    asyncio.run(scenario())
+
+
+def test_a_failed_run_does_not_end_on_the_moral() -> None:
+    async def launch(app: BedlamApp) -> int:
+        return 1
+
+    async def scenario() -> None:
+        app = BedlamApp(1729, ScriptedPatchSource(), launch, splash_s=0.05)
+        async with app.run_test(size=SIZE) as pilot:
+            await pilot.press("x")  # past the launch splash
+            await pilot.pause(0.3)
+            assert app.exit_code == 1 and not app.splashing
 
     asyncio.run(scenario())
 
