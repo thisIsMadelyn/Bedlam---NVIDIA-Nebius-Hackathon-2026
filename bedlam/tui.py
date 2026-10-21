@@ -686,8 +686,14 @@ class BedlamApp(App[int]):
                     head = f"    {label:<9} " if i == 0 else " " * _SIDE_INDENT
                     body.append(head, style=_SOFT)
                     body.append(line + "\n", style=GO if label == "you gain" else DAMAGE)
-            cost = f"    Bedlam shows this cost live: {item['consequence']['id']}"
-            body.append(fit(cost, width) + "\n", style=_SOFT)
+            # When the cost is felt and the fault that shows it: one line, so
+            # the longest trade-off still fits at 82 x 30. At most 74 columns.
+            body.append(f"    {'felt when':<9} ", style=_SOFT)
+            body.append(item["felt_when"], style=DAMAGE)
+            live = f" · shown live as {item['consequence']['id']}"
+            body.append(
+                fit(live, width - _SIDE_INDENT - len(item["felt_when"])) + "\n", style=_SOFT
+            )
         panel.update(body)
 
     def _render_system(self) -> None:

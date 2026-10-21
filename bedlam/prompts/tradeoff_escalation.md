@@ -15,12 +15,14 @@ Rules:
   Write both sides with equal weight; the developer decides.
 - Each option's `cost` is real and specific. An option with no cost, or a
   cost that is only a straw man, is not a trade-off.
-- Each option names a `consequence_fault_id` from `eligible_consequences`:
-  the fault under which this option's own `cost` is felt. Bedlam applies it
-  once, after the choice, so the developer watches the price of what they
-  chose. Match it to the cost, not to the gain: "fail fast" pays when a
-  dependency is merely slow (latency), "wait it out" pays when it hangs
-  (timeout). The two options must name different faults.
+- Right after each option's `cost`, say when that cost is felt: the
+  `cost_layer` (one of `cost_layers`) and `cost_felt_when` (one key of
+  `felt_when`). Read your own `cost` sentence and pick the condition it
+  describes. Bedlam turns that pair into a real fault and applies it once,
+  after the choice, so the developer watches the price of what they chose.
+  Match it to the cost, not to the gain: "fail fast" pays when a dependency
+  is merely `slow`, "wait it out" pays when it `hangs`, "retry" pays when it
+  `drops connections` over and over. The two options must not name the same pair.
 - Plain words for a developer, no jargon beyond the dependency names. Stay
   within `limits` (characters).
 
@@ -31,8 +33,8 @@ Reply with one JSON object and nothing else:
   "why": "<why this run leads here, citing what broke and what the patches did>",
   "options": [
     {"title": "<short name>", "gain": "<what you get>", "cost": "<what you give up>",
-     "consequence_fault_id": "<an id from eligible_consequences>"},
+     "cost_layer": "<one of cost_layers>", "cost_felt_when": "<a key of felt_when>"},
     {"title": "<short name>", "gain": "<what you get>", "cost": "<what you give up>",
-     "consequence_fault_id": "<a different id from eligible_consequences>"}
+     "cost_layer": "<one of cost_layers>", "cost_felt_when": "<a key of felt_when>"}
   ]
 }

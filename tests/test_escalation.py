@@ -52,7 +52,7 @@ def test_wording_that_recommends_a_side_is_rejected_and_retried() -> None:
 def test_two_options_with_the_same_cost_are_not_a_trade_off() -> None:
     def handler(ctx: dict[str, Any], model: str) -> Any:
         answer = answer_tradeoff_escalation(ctx, model)
-        answer["options"][1]["consequence_fault_id"] = answer["options"][0]["consequence_fault_id"]
+        answer["options"][1]["cost_felt_when"] = answer["options"][0]["cost_felt_when"]
         return answer
 
     trade_off, _ = _escalate(handler)
@@ -62,6 +62,35 @@ def test_two_options_with_the_same_cost_are_not_a_trade_off() -> None:
     a, b = trade_off.options
     assert a.consequence.id != b.consequence.id
     assert a.consequence.layer == b.consequence.layer == Layer.CACHE, "grounded in the last fault"
+
+
+def test_the_consequence_follows_from_when_the_cost_is_felt() -> None:
+    trade_off, _ = _escalate(answer_tradeoff_escalation)
+
+    a, b = trade_off.options
+    assert (a.felt_when, a.consequence.id) == ("cache is slow", "cache.latency.2500")
+    assert (b.felt_when, b.consequence.id) == ("cache hangs", "cache.timeout.0")
+
+
+def test_a_condition_or_layer_off_the_list_is_rejected_and_retried(caplog) -> None:
+    replies = iter(["condition", "layer", "fair"])
+
+    def handler(ctx: dict[str, Any], model: str) -> Any:
+        answer = answer_tradeoff_escalation(ctx, model)
+        wrong = next(replies)
+        if wrong == "condition":
+            answer["options"][0]["cost_felt_when"] = "flaky"
+        elif wrong == "layer":
+            answer["options"][1]["cost_layer"] = "api"
+        return answer
+
+    trade_off, _ = _escalate(handler)
+
+    # Each refusal names what was off the list; the third reply is accepted.
+    assert trade_off.source == "model"
+    reasons = [r.getMessage() + str(r.__dict__.get("fields")) for r in caplog.records]
+    assert any("'flaky' is not one of slow, hangs" in r for r in reasons)
+    assert any("'api' cannot be faulted; use one of cache, db" in r for r in reasons)
 
 
 def test_both_branches_are_reachable_and_cost_something_different(tmp_path: Path) -> None:
@@ -110,6 +139,7 @@ def test_the_decision_record_marks_the_choice_and_keeps_both_sides(tmp_path: Pat
     assert "### A. Fail fast\n" in record
     assert "### B. Wait it out (chosen)" in record
     assert record.count("- Cost: ") == 2
+    assert record.count("- Felt when: ") == 2
     assert "The developer chose." in record
 
 
@@ -151,7 +181,8 @@ def test_the_trade_off_takes_the_frame_and_fits_at_82_columns() -> None:
                 " B  Wait it out",
                 "you gain",
                 "you pay",
-                "shows this cost live",
+                "felt when db is slow · shown live as db.latency.2500",
+                "felt when db hangs · shown live as db.timeout.0",
             ):
                 assert text in panel, text
             assert "…" not in panel.split("TRADE-OFF", 1)[1], "a trade-off line was cut"
@@ -172,7 +203,12 @@ def test_the_longest_trade_off_the_parser_allows_still_fits_at_82() -> None:
     def words(n: int) -> str:
         return ("lorem ipsum dolor " * 20)[:n].strip()
 
-    option = {"gain": words(120), "cost": words(120), "consequence": {"id": "cache.timeout.3000"}}
+    option = {
+        "gain": words(120),
+        "cost": words(120),
+        "felt_when": "cache drops connections",
+        "consequence": {"id": "cache.timeout.3000"},
+    }
     trade_off = {
         "axis": words(60),
         "why": words(220),
@@ -186,7 +222,7 @@ def test_the_longest_trade_off_the_parser_allows_still_fits_at_82() -> None:
             await pilot.pause(0.2)
             rows = [s.text for s in app.screen._compositor.render_strips()]
             panel = rows[[i for i, r in enumerate(rows) if "TRADE-OFF" in r][0] :]
-            assert sum("shows this cost live" in r for r in panel) == 2, "option B cut off"
+            assert sum("shown live as" in r for r in panel) == 2, "option B cut off"
             assert "…" not in "".join(panel)
 
     asyncio.run(scenario())

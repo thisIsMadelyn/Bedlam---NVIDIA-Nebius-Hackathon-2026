@@ -139,13 +139,15 @@ def answer_tradeoff_escalation(ctx: dict[str, Any], _model: str) -> Any:
                 "title": "Fail fast",
                 "gain": "a hung dependency costs one quick error",
                 "cost": "errors whenever it is merely slow",
-                "consequence_fault_id": f"{layer}.latency.2500",
+                "cost_layer": layer,
+                "cost_felt_when": "slow",
             },
             {
                 "title": "Wait it out",
                 "gain": "a slow dependency still answers",
                 "cost": "requests pile up when it hangs",
-                "consequence_fault_id": f"{layer}.timeout.0",
+                "cost_layer": layer,
+                "cost_felt_when": "hangs",
             },
         ],
     }
