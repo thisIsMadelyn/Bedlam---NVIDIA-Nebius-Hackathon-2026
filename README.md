@@ -11,6 +11,10 @@ for you.
 
 ## Why a terminal, and why local
 
+<p align="center">
+    <img src="docs/screenshot-1.png" alt="Bedlam's first break" width="800">
+</p>
+
 Bedlam is for the developer who has just patched an outage, and that developer
 is already in a terminal next to Docker. The app it attacks runs on your
 machine on purpose: Bedlam sends real faults to it, and Nebius's acceptable-use
