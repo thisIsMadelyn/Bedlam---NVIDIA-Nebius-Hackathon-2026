@@ -77,15 +77,20 @@ def _parser(manifest: tuple[Dependency, ...], previous: set[str], best: list[Sea
         skipped: list[str] = []
         seen: set[str] = set()
         for item in value["queries"]:
+            # An invalid item is skipped, not fatal, so a valid query beside
+            # it still counts toward `best`.
             dep = lookup(manifest, str(item["dependency"]))
             if dep is None:
-                raise ValueError(f"{item['dependency']!r} is not a target dependency")
+                skipped.append(f"{item['dependency']!r} is not a target dependency")
+                continue
             term = " ".join(str(item["failure_term"]).split()).lower()
             low, high = _TERM_WORDS
             if not low <= len(term.split()) <= high:
-                raise ValueError(f"failure term must be {low}-{high} words: {term!r}")
+                skipped.append(f"failure term must be {low}-{high} words: {term!r}")
+                continue
             if _BANNED_TERMS.search(term) or _BANNED_TERMS.search(dep.name):
-                raise ValueError("queries target dependencies, never the boilerplate")
+                skipped.append("queries target dependencies, never the boilerplate")
+                continue
             query = SearchQuery(dependency=dep.name, version=dep.version, failure_term=term)
             # A skipped query is named in the rejection: a bare "need N new
             # queries" left Nano repeating the same mistake on its retry.

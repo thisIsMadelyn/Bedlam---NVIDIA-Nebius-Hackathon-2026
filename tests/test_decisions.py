@@ -79,8 +79,8 @@ def test_query_version_is_filled_from_the_manifest_not_the_model() -> None:
 def test_queries_never_target_the_boilerplate_or_unknown_deps(bad: dict) -> None:
     good = {"dependency": "redis", "failure_term": "socket connect hangs forever"}
     queries = _formulate({"queries": [bad, good]})
-    assert [q.templated for q in queries] == [True], "the whole reply is rejected"
-    assert not any("boilerplate" in q.text or "notadep" in q.text for q in queries)
+    assert [q.text for q in queries] == ["redis 7.4.0 socket connect hangs forever"]
+    assert queries[0].short and not queries[0].templated, "the valid query is kept"
 
 
 def test_a_repeated_query_is_named_in_the_rejection_so_the_retry_can_fix_it() -> None:
