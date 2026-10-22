@@ -33,8 +33,8 @@ badges of either kind.
   caused by the launch mode, not the code: the TUI was started in real
   patch mode instead of `--scripted`, with the target's edits saved before
   the run began, so P found no new changes. Still open: the script's
-  take-dependent brackets, filled
-  in when the video is recorded on Wed 28 Oct.
+  take-dependent brackets, filled in when the video is recorded on Wed
+  28 Oct.
 - **Badges:**
   - 🆕 Addition — Phase 7 plan: screen recording with a voice-over recorded
     afterwards and a few captions; a Draft A introduction after the cycle-2
