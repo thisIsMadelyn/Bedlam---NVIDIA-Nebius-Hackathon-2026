@@ -1895,6 +1895,7 @@ def main(argv: list[str] | None = None) -> int:
     with scripted or contextlib.nullcontext():
         if scripted is not None:
             scripted.settle()
+            scripted.revert_on_console_close()
         app.run()
     return app.exit_code if app.exit_code is not None else 1
 

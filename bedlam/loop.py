@@ -473,6 +473,7 @@ def main(argv: list[str] | None = None) -> int:
     # runs them, and reverted when it ends.
     with ScriptedPatchSource(args.patches, target=DEFAULT_TARGET) as patches:
         patches.settle()
+        patches.revert_on_console_close()
         return asyncio.run(execute(root_seed, patches, trace_path, args.record, choices=choices))
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -136,6 +137,21 @@ def test_a_fix_left_by_a_killed_run_is_reverted_on_entry(repo: Path, diffs: Path
     with ScriptedPatchSource(diffs, target=repo) as fresh:
         assert _git(repo, "status", "--porcelain") == ""
         assert fresh.cleaned == ["auth-cache.diff", "redis-timeouts.diff"], "settle must wait"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows console events")
+def test_closing_the_console_reverts_the_fixes_but_ctrl_c_does_not(repo: Path, diffs: Path) -> None:
+    source = ScriptedPatchSource(diffs, target=repo)
+    asyncio.run(source.wait_for_patch(1, "cache.connection_cut"))
+    source.revert_on_console_close()
+    handler = source._console_handler
+    assert callable(handler)
+
+    handler(0)  # Ctrl+C: a key in the TUI
+    assert _git(repo, "status", "--porcelain") != ""
+    handler(2)  # the window closed
+    assert _git(repo, "status", "--porcelain") == ""
+    source.restore()  # the normal exit after it finds nothing left
 
 
 def test_without_a_target_the_diffs_are_only_read(repo: Path, diffs: Path) -> None:

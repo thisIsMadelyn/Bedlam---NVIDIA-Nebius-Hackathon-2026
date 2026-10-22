@@ -15,7 +15,9 @@ from __future__ import annotations
 import asyncio
 import os
 import subprocess
+import sys
 import tempfile
+import threading
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -125,6 +127,11 @@ FIX_FOR: Final[dict[str, str]] = {
 }
 
 
+# Console events that end the process: the window closed, logoff, shutdown.
+# Ctrl+C and Ctrl+Break are left alone: in the TUI they are keys.
+_CONSOLE_END_EVENTS: Final = frozenset({2, 5, 6})
+
+
 class ScriptedPatchSource:
     """The prepared fix for the live fault, from `FIX_FOR`.
 
@@ -139,6 +146,9 @@ class ScriptedPatchSource:
         self._directory = directory
         self._target = target
         self._applied: list[Path] = []
+        # A console handler reverts from its own thread; one revert at a time.
+        self._restoring = threading.Lock()
+        self._console_handler: object | None = None
         # What entering reverted. The api reloads on that change, so the run
         # must wait for it (`settle`) before its baseline.
         self.cleaned: list[str] = []
@@ -163,8 +173,37 @@ class ScriptedPatchSource:
 
     def restore(self) -> None:
         """Revert every component this run applied, newest first."""
-        while self._applied:
-            self._apply(self._applied.pop(), "-R")
+        with self._restoring:
+            while self._applied:
+                self._apply(self._applied.pop(), "-R")
+
+    def revert_on_console_close(self) -> None:
+        """On Windows, also revert when the console window is closed.
+
+        Closing the window ends the process without unwinding, so `__exit__`
+        never runs. Windows calls this handler first, on its own thread, and
+        gives it about 5 s. Elsewhere it does nothing: the next run reverts a
+        killed run's fixes on entering.
+        """
+        if sys.platform != "win32" or self._target is None:
+            return
+        import ctypes
+        from ctypes import wintypes
+
+        def on_event(event: int) -> bool:
+            if event in _CONSOLE_END_EVENTS:
+                try:
+                    self.restore()
+                    log_event(_LOG, "reverted the fixes as the console closed")
+                except Exception as exc:  # noqa: BLE001 - the next run reverts on entry
+                    _LOG.warning(
+                        "console-close revert failed", extra={"fields": {"error": str(exc)}}
+                    )
+            return False  # the default handler still ends the process
+
+        handler = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.DWORD)(on_event)
+        self._console_handler = handler  # held, or ctypes frees the callback
+        ctypes.windll.kernel32.SetConsoleCtrlHandler(handler, True)
 
     async def wait_for_patch(self, cycle: int, fault: str | None = None) -> Patch:
         if fault not in FIX_FOR:
