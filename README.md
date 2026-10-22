@@ -25,8 +25,9 @@ Bedlam's brain, never its victim.
   escalation, then it stops. There is no open-ended loop.
 - **Faults are injected sequentially.** Bedlam never breaks two layers at once,
   because the whole point is a clean causal link between one fault and one patch.
-- **The target runs entirely on your machine.** Nebius is used for model
-  inference only.
+- **The target runs entirely on your machine.** Every decision Bedlam makes is
+  a live Nemotron call on Nebius Token Factory, but Nebius never hosts the app
+  being attacked.
 
 ## The jester
 
