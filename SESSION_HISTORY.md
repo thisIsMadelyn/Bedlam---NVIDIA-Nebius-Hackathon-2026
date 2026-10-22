@@ -29,11 +29,10 @@ badges of either kind.
   Phase 5 in progress. The dim field on the trade-off page showed only
   after the choice on screens under about 42 rows; choosing A or B went
   straight to the end splash; the field was motionless.
-- **End status:** `9f23fed` plus this entry, working tree clean, 192 tests
-  passing, lint and format clean. No decision-chain change, so the replay
-  fixture stands. Still open: `/log` during the chosen cost's few seconds,
-  the no-query abort decision, the Phase 5 runs (three clean in a row, a
-  fresh clone elsewhere); feature freeze Mon 26 Oct.
+- **End status:** `0bc8f47` plus this entry, 193 tests passing, lint and
+  format clean. No decision-chain change, so the replay fixture stands.
+  Still open: the no-query abort decision, the Phase 5 runs (three clean
+  in a row, a fresh clone elsewhere); feature freeze Mon 26 Oct.
 - **Badges:**
   - 🆕 Addition — `LIMITATIONS.md`: documented failure cases, separate
     from the design guarantees in the README.
@@ -51,6 +50,8 @@ badges of either kind.
     about 42 rows; the recap now gives way while the replies are empty.
   - 🐛 Bug fix — The trade-off cards changed width on the first frame and
     after `/log`; they are now sized from the frame.
+  - 🐛 Bug fix — `/log` refused while the chosen cost ran ("the run log is
+    already on screen"); it now switches to the decided page then too.
 
 ---
 
