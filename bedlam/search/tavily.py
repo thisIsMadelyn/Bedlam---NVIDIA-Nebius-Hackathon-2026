@@ -37,6 +37,8 @@ EXCLUDE_DOMAINS: Final = ("nvd.nist.gov", "osv.dev")
 _NOISE_PATH_MARKERS: Final = ("/commit/", "/blob/")
 _SNIPPET_CHARS: Final = 600
 MAX_RESULTS: Final = 5
+# What one live call costs at search_depth="advanced"; a cached one is free.
+CREDITS_PER_SEARCH: Final = 2
 
 
 @dataclass(frozen=True, slots=True)

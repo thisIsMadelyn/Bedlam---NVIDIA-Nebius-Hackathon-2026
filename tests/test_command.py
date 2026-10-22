@@ -156,6 +156,37 @@ def test_after_a_run_why_diff_and_seed_explain_it() -> None:
     asyncio.run(scenario())
 
 
+def test_search_shows_the_queries_calls_labels_and_routing() -> None:
+    async def scenario() -> None:
+        app = _app()
+        async with app.run_test(size=SIZE) as pilot:
+            await _drive(app, pilot)
+            await _type(pilot, "search 1")
+            reply = _reply(app, "search 1")
+            queries = app._cycles[1]["searching"]["queries"]
+            assert reply[0].startswith(f"  cycle 1 · {len(queries)} queries · ")
+            assert reply[0].endswith(" credits")
+            for i, query in enumerate(queries, 1):
+                assert reply[i].startswith(f"  {i}  {query['text'][:20]}")
+                assert reply[i].endswith(" kept") or " kept, " in reply[i]
+            assert "     never from nvd.nist.gov or osv.dev" in reply
+            assert any(r.startswith("  Nano labelled ") for r in reply)
+            assert reply[-1].startswith(f"  → {app._cycles[1]['routed']['specialist']} specialist")
+            assert all(len(row) <= app._reply_width() for row in reply)
+
+    asyncio.run(scenario())
+
+
+def test_search_before_any_cycle_says_so() -> None:
+    async def scenario() -> None:
+        app = _idle_app()
+        async with app.run_test(size=SIZE) as pilot:
+            await _type(pilot, "search")
+            assert _reply(app, "search") == ["  no cycle has started yet"]
+
+    asyncio.run(scenario())
+
+
 def test_tab_takes_the_completion_and_never_leaves_the_line() -> None:
     async def scenario() -> None:
         app = _idle_app()

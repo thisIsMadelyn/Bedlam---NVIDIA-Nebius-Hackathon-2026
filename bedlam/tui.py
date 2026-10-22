@@ -77,7 +77,14 @@ from bedlam.patches import (
 )
 from bedlam.probes.app import AppResult
 from bedlam.probes.result import DEFAULT_TIMEOUT_S
-from bedlam.search.tavily import SearchCall, SearchClient
+from bedlam.search.tavily import (
+    CREDITS_PER_SEARCH,
+    EXCLUDE_DOMAINS,
+    INCLUDE_DOMAINS,
+    MAX_RESULTS,
+    SearchCall,
+    SearchClient,
+)
 from bedlam.stats import ContainerStats, StatsUnavailable
 from bedlam.stats import sample as sample_stats
 from bedlam.topology import Layer
@@ -147,6 +154,8 @@ _CARD_LABEL: Final = 6
 # Rows above and below the trade-off panel and its replies.
 _FIXED_ROWS: Final = ("header", "top", "says", "command", "footer")
 _BAR_CEILING_MS: Final = 2000.0
+# The summed-score bars in /search, at their longest.
+_SEARCH_BAR: Final = 24
 _REPO_ROOT: Final = Path(__file__).resolve().parents[1]
 _LOG = get_logger("bedlam.tui")
 _SAYS: Final = " BEDLAM "
@@ -254,6 +263,7 @@ COMMANDS: Final = {
     "cycles": "the run in one line per cycle, then the trade-off",
     "cycle": "one cycle step by step: /cycle 1, /cycle 2",
     "why": "why this layer: Tavily weights and results. /why 1: cycle 1",
+    "search": "how the search ran, call by call. /search 1: cycle 1",
     "diff": "what Bedlam read in your patch. /diff 1: cycle 1's",
     "calls": "model calls per call site: model, tokens, latency",
     "cost": "what your choice cost, measured live",
@@ -654,6 +664,73 @@ class BedlamApp(App[int]):
             where = re.sub(r"^https?://(www\.)?", "", result["url"])
             text = f"    {result['layer']:<5} {result['score']:.2f}  {where}  {result['title']}"
             self._say(text, style=_SOFT)
+
+    def _command_search(self, arg: str) -> None:
+        """The search behind one cycle, request to routing, from what the
+        TUI already holds: the queries, the client's calls, the labels."""
+        cycle = self._cycle_arg(arg, "search")
+        if cycle is None:
+            return
+        steps = self._cycles[cycle]
+        if "searching" not in steps:
+            self._say(f"  cycle {cycle} has not searched yet", style=_SOFT)
+            return
+        queries = steps["searching"]["queries"]
+        calls = self._search.calls if self._search is not None else []
+        made = [next((c for c in calls if c.query == q["text"]), None) for q in queries]
+        live = sum(c is not None and not c.cached for c in made)
+        head = f"  cycle {cycle} · {len(queries)} queries · {live} live"
+        self._say(
+            f"{head}, {len(queries) - live} cached · {live * CREDITS_PER_SEARCH} credits",
+            style=_SOFT,
+        )
+        width = self._reply_width()
+        for i, (query, call) in enumerate(zip(queries, made, strict=True), 1):
+            if call is None:
+                tail = "searching"
+            elif call.cached:
+                tail = "cached"
+            elif call.outcome != "ok":
+                tail = f"failed: {call.error}"
+            else:
+                tail = f"{call.latency_ms:>5.0f} ms · {call.results} kept"
+                tail += f", {call.filtered} cut" if call.filtered else ""
+            label = fit(_query_label(query), width - len(tail) - 6)
+            self._say(f"  {i}  {label:<{width - len(tail) - 6}} {tail}", style=_SOFT)
+        self._say("", style=_SOFT)
+        self._say(f"     advanced depth · up to {MAX_RESULTS} results a query", style=_SOFT)
+        sites = f"only from {', '.join(INCLUDE_DOMAINS)}"
+        for line in wrap(sites, indent=10, width=width - 5):
+            self._say(f"     {line}", style=_SOFT)
+        self._say(f"     never from {' or '.join(EXCLUDE_DOMAINS)}", style=_SOFT)
+        routed = steps.get("routed")
+        if routed is None:
+            self._say("", style=_SOFT)
+            self._say("  Nano is labelling the results", style=_SOFT)
+            return
+        results = routed["results"]
+        counts = {layer.value: 0 for layer in Layer}
+        for result in results:
+            if result["layer"]:
+                counts[result["layer"]] += 1
+        unnamed = len(results) - sum(counts.values())
+        named = " · ".join(f"{layer} {n}" for layer, n in counts.items())
+        self._say("", style=_SOFT)
+        self._say(f"  Nano labelled {len(results)} results: {named} · none {unnamed}", style=_SOFT)
+        self._say("", style=_SOFT)
+        weights = routed["routing"]["weights"]
+        top = max(weights.values(), default=0.0)
+        for layer in Layer:
+            weight = weights.get(layer.value, 0.0)
+            filled = round(weight / top * _SEARCH_BAR) if top else 0
+            bar = "█" * filled + " " * (_SEARCH_BAR - filled)
+            self._say(f"     {layer.value:<6} {bar}  {weight:.2f}", style=_SOFT)
+        self._say("", style=_SOFT)
+        basis = routed["routing"]["basis"]
+        self._say(
+            f"  → {routed['specialist']} specialist ({basis}). /why {cycle} lists the results",
+            style=_SOFT,
+        )
 
     def _command_diff(self, arg: str) -> None:
         patch, analysis = self._patch, self._analysis
