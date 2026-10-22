@@ -140,7 +140,9 @@ def test_a_fix_left_by_a_killed_run_is_reverted_on_entry(repo: Path, diffs: Path
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows console events")
-def test_closing_the_console_reverts_the_fixes_but_ctrl_c_does_not(repo: Path, diffs: Path) -> None:
+def test_closing_the_console_reverts_the_fixes_but_ctrl_c_does_not(
+    repo: Path, diffs: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     source = ScriptedPatchSource(diffs, target=repo)
     asyncio.run(source.wait_for_patch(1, "cache.connection_cut"))
     source.revert_on_console_close()
@@ -149,8 +151,10 @@ def test_closing_the_console_reverts_the_fixes_but_ctrl_c_does_not(repo: Path, d
 
     handler(0)  # Ctrl+C: a key in the TUI
     assert _git(repo, "status", "--porcelain") != ""
-    handler(2)  # the window closed
+    with caplog.at_level("INFO", logger="bedlam.patches"):
+        handler(2)  # the window closed
     assert _git(repo, "status", "--porcelain") == ""
+    assert "reverted this run's fixes" in caplog.messages, "the revert must be on record"
     source.restore()  # the normal exit after it finds nothing left
 
 

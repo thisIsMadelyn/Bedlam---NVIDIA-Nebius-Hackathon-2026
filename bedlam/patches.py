@@ -174,8 +174,15 @@ class ScriptedPatchSource:
     def restore(self) -> None:
         """Revert every component this run applied, newest first."""
         with self._restoring:
+            reverted: list[str] = []
             while self._applied:
-                self._apply(self._applied.pop(), "-R")
+                path = self._applied.pop()
+                self._apply(path, "-R")
+                reverted.append(path.name)
+            # Logged here, whichever path reverts: on a closed window Textual
+            # may end the app itself, so the console handler finds nothing.
+            if reverted:
+                log_event(_LOG, "reverted this run's fixes", fixes=reverted)
 
     def revert_on_console_close(self) -> None:
         """On Windows, also revert when the console window is closed.
@@ -192,9 +199,9 @@ class ScriptedPatchSource:
 
         def on_event(event: int) -> bool:
             if event in _CONSOLE_END_EVENTS:
+                log_event(_LOG, "console closing")
                 try:
                     self.restore()
-                    log_event(_LOG, "reverted the fixes as the console closed")
                 except Exception as exc:  # noqa: BLE001 - the next run reverts on entry
                     _LOG.warning(
                         "console-close revert failed", extra={"fields": {"error": str(exc)}}
