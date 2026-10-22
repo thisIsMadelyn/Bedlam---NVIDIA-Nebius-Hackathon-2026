@@ -19,7 +19,19 @@ from bedlam.models.client import ModelClient
 from bedlam.models.map import CallSite
 from bedlam.patches import ScriptedPatchSource
 from bedlam.topology import Layer
-from bedlam.tui import BedlamApp, GatedChoice, option_cards, postmortem_field
+from bedlam.tui import (
+    _FIELD_GLOW,
+    _FIELD_INK,
+    GLOW_FRAMES,
+    GLOW_FROM,
+    GLOW_REST,
+    GLOW_TO,
+    BedlamApp,
+    GatedChoice,
+    glow_at,
+    option_cards,
+    postmortem_field,
+)
 
 _HISTORY = [
     FaultRecord(1, "db.latency.2500", Layer.DB, FaultKind.LATENCY, "db"),
@@ -370,6 +382,43 @@ def test_while_the_choice_waits_the_recap_gives_way_to_the_field() -> None:
     assert field and not recap, "the recap would leave the replies too short for the field"
     field, recap = asyncio.run(scenario((82, 45)))
     assert field and recap, "a taller screen has room for both"
+
+
+def test_the_glow_lights_the_band_without_changing_its_shades() -> None:
+    plain = [line.plain for line in postmortem_field()]
+    lit = postmortem_field(glow=50)
+    assert [line.plain for line in lit] == plain, "the glow changes colour, never the glyphs"
+    inks = {str(span.style) for line in lit for span in line.spans}
+    assert _FIELD_GLOW in inks and _FIELD_INK in inks
+    unlit = {str(span.style) for line in postmortem_field() for span in line.spans}
+    assert _FIELD_GLOW not in unlit
+
+
+def test_the_glow_swings_from_a_to_b_and_back() -> None:
+    assert glow_at(0) == pytest.approx(GLOW_FROM)
+    assert glow_at(GLOW_FRAMES) == pytest.approx(GLOW_TO)
+    assert glow_at(2 * GLOW_FRAMES) == pytest.approx(GLOW_FROM)
+    there = [glow_at(frame) for frame in range(GLOW_FRAMES + 1)]
+    assert there == sorted(there), "one way at a time, no jitter"
+
+
+def test_the_glow_moves_while_waiting_and_rests_on_the_chosen_letter() -> None:
+    async def scenario() -> None:
+        app = BedlamApp(1729, ScriptedPatchSource(), lambda app: asyncio.sleep(3600))
+        async with app.run_test(size=(82, 45)) as pilot:
+            app.on_loop_event("trade_off", {"trade_off": TRADE_OFF_FIELDS})
+            await pilot.pause(0.3)
+            start = app._glow
+            await pilot.pause(0.5)
+            assert app._glow != start, "the field moves while the choice waits"
+            app._run_events["chosen"] = {"choice": "b"}
+            await pilot.pause(GLOW_FRAMES / 10 + 0.8)
+            assert app._glow == GLOW_REST["b"], "it rests over the chosen letter"
+            frame = [s.text for s in app.screen._compositor.render_strips()]
+            await pilot.pause(0.3)
+            assert [s.text for s in app.screen._compositor.render_strips()] == frame
+
+    asyncio.run(scenario())
 
 
 @pytest.mark.parametrize("rows", [7, 8, 11])

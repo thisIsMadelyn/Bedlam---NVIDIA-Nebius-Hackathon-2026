@@ -110,6 +110,10 @@ _SOFT: Final = "#A29FB2"
 # The post-mortem field: dim, but 4:1 on the background, so a laptop panel
 # in a lit room still shows it (MUTED, 2.45:1, does not).
 _FIELD_INK: Final = "#7B7792"
+# Its glow, a lighter ink that swings between A and B: the crest is ACCENT,
+# its edges halfway between the two.
+_FIELD_GLOW: Final = ACCENT
+_FIELD_GLOW_EDGE: Final = "#8984BA"
 _JESTER_COLOURS: Final = {
     "accent": ACCENT, "ink": INK, "muted": MUTED, "go": GO, "soft": _SOFT, "text": _TEXT,
 }  # fmt: skip
@@ -401,6 +405,8 @@ class BedlamApp(App[int]):
         self._decided = False
         self._page_rows: list[tuple[str | Text, str]] = []
         self._field_key: tuple[int, int] | None = None  # the log's size while the field shows
+        self._glow_frame = 0  # frames of the field's swing so far, at FIELD_FPS
+        self._glow = GLOW_FROM  # where the glow is, in percent along the band
         # Where the latest command's rows start in the post-mortem log: /grep
         # never hides what was just asked for.
         self._page_start = 0
@@ -449,6 +455,7 @@ class BedlamApp(App[int]):
     def on_mount(self) -> None:
         self._render_chrome()
         self.set_interval(0.05, self._tick)
+        self.set_interval(1 / FIELD_FPS, self._animate_field)
         if self.splash_s <= 0:
             self._start()
             return
@@ -1186,7 +1193,7 @@ class BedlamApp(App[int]):
             rows = min(height, FIELD_HEIGHT)
             for _ in range((height - rows) // 2):
                 page.write(Text(""))
-            for line in postmortem_field(rows):
+            for line in postmortem_field(rows, round(self._glow)):
                 page.write(Text.assemble(left, line))
             self._field_key = (width, height)
         title = "POST-MORTEM · /cycles to start, /help for the rest"
@@ -1259,6 +1266,33 @@ class BedlamApp(App[int]):
             return
         size = (_inner(page), page.scrollable_content_region.height)
         if size != self._field_key:
+            self._redraw_page()
+
+    def _animate_field(self) -> None:
+        """Move the field's glow one frame: it swings between A and B while
+        the choice waits, then travels to the chosen letter and rests there.
+        Display only, driven by a frame counter."""
+        try:
+            page = self.query_one("#postmortem", RichLog)
+        except NoMatches:
+            return  # shutting down
+        if self._field_key is None or not page.display or self.splashing:
+            return
+        chosen = self._run_events.get("chosen")
+        if chosen is None:
+            self._glow_frame += 1
+            glow = glow_at(self._glow_frame)
+        else:
+            rest = GLOW_REST[chosen["choice"]]
+            step = (GLOW_TO - GLOW_FROM) / GLOW_FRAMES
+            glow = (
+                rest
+                if abs(rest - self._glow) <= step
+                else self._glow + math.copysign(step, rest - self._glow)
+            )
+        moved = round(glow) != round(self._glow)
+        self._glow = glow
+        if moved:
             self._redraw_page()
 
     def _render_trade_off(self) -> None:
@@ -1633,15 +1667,34 @@ FIELD_WIDTH: Final = 78
 FIELD_HEIGHT: Final = 14
 # Below this the band crowds the labels and turns into a blob.
 FIELD_MIN_HEIGHT: Final = 7
+# The glow's swing: positions in percent along the band, past both ends so
+# it fades out at each, about 3 s one way at 10 frames a second.
+FIELD_FPS: Final = 10
+GLOW_FROM: Final = -5
+GLOW_TO: Final = 105
+GLOW_FRAMES: Final = 30
+# Where the glow rests once chosen: over the letter.
+GLOW_REST: Final = {"a": 15, "b": 83}
+# How far along the band the glow lights, in percent: crest, then edge.
+_GLOW_CREST: Final = 3
+_GLOW_EDGE: Final = 7
+
+
+def glow_at(frame: int) -> float:
+    """The glow's position at `frame`: A to B and back, easing at each end."""
+    swing = frame % (2 * GLOW_FRAMES) / GLOW_FRAMES
+    x = swing if swing <= 1 else 2 - swing
+    return GLOW_FROM + (GLOW_TO - GLOW_FROM) * (1 - math.cos(math.pi * x)) / 2
 
 
 @functools.cache
-def postmortem_field(height: int = FIELD_HEIGHT) -> tuple[Text, ...]:
+def postmortem_field(height: int = FIELD_HEIGHT, glow: int | None = None) -> tuple[Text, ...]:
     """The post-mortem field: a thin band rising from A to B, abstract, no
     figures. Each cell's shade is a gaussian of its distance from one line;
     only two shades, so it reads as a band and not a blob (27% ink). Drawn
     for 14 rows; a shorter log gets the same band, its line and width
-    scaled to the rows it has."""
+    scaled to the rows it has. `glow`, in percent along the band, lights
+    the cells near it in a lighter ink; the shades stay the same."""
     k = height / FIELD_HEIGHT
     (x1, y1), (x2, y2), sigma = (6.0, 10.5 * k), (72.0, 3.0 * k), max(0.6, 1.25 * k)
     dx, dy = x2 - x1, y2 - y1
@@ -1662,7 +1715,21 @@ def postmortem_field(height: int = FIELD_HEIGHT) -> tuple[Text, ...]:
         line = Text()
         for col, cell in enumerate(cells):
             label = labels.get(col) if index == height - 1 else None
-            line.append(label or cell, style=_SOFT if label else _FIELD_INK)
+            if label:
+                line.append(label, style=_SOFT)
+                continue
+            ink = _FIELD_INK
+            if glow is not None:
+                t = ((col - x1) * dx + (index - y1) * dy) / (dx * dx + dy * dy)
+                away = abs(t * 100 - glow)
+                ink = (
+                    _FIELD_GLOW
+                    if away <= _GLOW_CREST
+                    else _FIELD_GLOW_EDGE
+                    if away <= _GLOW_EDGE
+                    else ink
+                )
+            line.append(cell, style=ink)
         lines.append(line)
     return tuple(lines)
 

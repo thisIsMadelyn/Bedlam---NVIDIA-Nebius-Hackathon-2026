@@ -493,3 +493,8 @@ trade-off waits, on screens under about 42 rows: the "how you got here"
 recap left the replies too few rows for it. While the replies are empty,
 the recap now gives way when only that makes room for the field; it is
 still in `/cycles`, and taller screens show both.
+
+**Animated 22 Oct:** a lighter ink (ACCENT at the crest) swings along the
+band A → B → A, about 3 s each way at 10 frames a second, while the choice
+waits; once chosen it travels to that letter and rests. Same glyphs and
+shades; driven by a frame counter, display only.
