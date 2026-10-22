@@ -276,8 +276,34 @@ Artifacts:
 - Cold open (judges' meeting, 22 Oct): the first 10–15 seconds show the
   cycle-2 re-break ("your patch held, but it did not cover X"), then the
   video goes back to the start. The aha lands inside 30 seconds
-- On screen: the loop, the trade-off and `/why` only. The other commands,
-  the post-mortem page and the jester's moods are left to the manual
+- On screen: the loop, the trade-off, and a commands segment of `/why`,
+  `/diff`, `/calls`, `/cost` and `/log` (widened from `/why` only on
+  22 Oct). The other commands, the post-mortem page and the jester's moods
+  are left to the manual
+- Format (decided 22 Oct): screen recording with a voice-over recorded
+  afterwards, not live, plus a few burned-in captions for the key beats.
+  No repo URL in the video: it is in the description
+- Introduction (Draft A, decided 22 Oct), right after the cold open, over a
+  plain title card (name + Bedlam, no logos) then the TUI at baseline:
+  "I'm [name], and this is Bedlam. It's for backend developers who fix an
+  outage and ship the patch hoping it holds. Chaos tools break your system
+  once. Bedlam breaks it, runs your fix, and then breaks it again where
+  your fix didn't reach. Here's a run from the start." The pitch sentence
+  follows whatever Phase 6 settles
+- Outline (22 Oct):
+
+  | Time | Segment |
+  |---|---|
+  | 0:00–0:15 | Cold open: cycle-2 re-break |
+  | 0:15–0:35 | Introduction (Draft A) |
+  | 0:35–0:55 | Cycle 1: Tavily queries, routing, specialist, fault |
+  | 0:55–1:10 | Damage: probes, symptom, AGENT panel model attribution |
+  | 1:10–1:25 | Patch handed over, analysed, held |
+  | 1:25–1:45 | Cycle 2: re-route, re-break |
+  | 1:45–2:05 | Trade-off: A or B, the developer chooses |
+  | 2:05–2:35 | Commands: `/why`, `/diff`, `/calls`, `/cost`, `/log` |
+  | 2:35–2:40 | End on the decided page, or Q for the moral |
+
 - Screen recording showing the project actually running
 - The live Tavily call visible on screen
 - Uploaded **public** to YouTube, not unlisted
@@ -469,7 +495,8 @@ item is scheduled into its phase above.
   the README and Phase 7 opens the video on it.
 - **One thing done well.** Every integration already supports the loop. No
   new features before freeze beyond what is already approved; the video
-  shows the loop, the trade-off and `/why`.
+  shows the loop, the trade-off and `/why` (widened 22 Oct to a short
+  commands segment, see Phase 7).
 - **Action first, onboarding, which model.** Model attribution is already
   on screen (AGENT panel). Phase 5 adds one onboarding line in the NOW
   box until the first turn (landed 22 Oct).
