@@ -8,8 +8,9 @@ import pytest
 from test_tui import SIZE, WIDE, _app, _drive
 from textual.widgets import Input, RichLog, Static
 
+from bedlam.guide import STEPS
 from bedlam.patches import ScriptedPatchSource
-from bedlam.tui import COMMANDS, SAY, BedlamApp
+from bedlam.tui import COMMANDS, LOOP_STEPS, SAY, BedlamApp
 from bedlam.voice import SUDO, SUDO_CHOOSE
 
 
@@ -183,6 +184,43 @@ def test_search_before_any_cycle_says_so() -> None:
         async with app.run_test(size=SIZE) as pilot:
             await _type(pilot, "search")
             assert _reply(app, "search") == ["  no cycle has started yet"]
+
+    asyncio.run(scenario())
+
+
+def _steps(reply: list[str]) -> list[str]:
+    return [row for row in reply if row[3:4].isdigit()]
+
+
+def test_loop_lists_every_step_and_marks_none_before_the_run() -> None:
+    async def scenario() -> None:
+        app = _idle_app()
+        async with app.run_test(size=SIZE) as pilot:
+            await _type(pilot, "loop")
+            reply = _reply(app, "loop")
+            assert reply[1] == "   round 1  next      round 2  next      then the trade-off"
+            steps = _steps(reply)
+            assert len(steps) == len(LOOP_STEPS) == STEPS
+            assert not any("◀" in row for row in steps)
+            assert all(len(row) <= SAY for row in reply)
+
+    asyncio.run(scenario())
+
+
+def test_loop_marks_your_turn_while_bedlam_waits_for_a_patch() -> None:
+    async def scenario() -> None:
+        app = _app()
+        async with app.run_test(size=SIZE) as pilot:
+            for _ in range(500):
+                if app.patches.waiting:
+                    break
+                await asyncio.sleep(0.01)
+            await _type(pilot, "loop")
+            reply = _reply(app, "loop")
+            assert reply[1].startswith("   round 1  now      round 2  next")
+            marked = [row for row in _steps(reply) if "◀" in row]
+            assert marked == [f"   5  {'YOUR TURN':<16}◀   you patch it and press P"]
+            assert "   └──→  round 2 starts at 1, aimed at the gap" in reply
 
     asyncio.run(scenario())
 

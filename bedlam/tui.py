@@ -264,6 +264,7 @@ COMMANDS: Final = {
     "cycle": "one cycle step by step: /cycle 1, /cycle 2",
     "why": "why this layer: Tavily weights and results. /why 1: cycle 1",
     "search": "how the search ran, call by call. /search 1: cycle 1",
+    "loop": "the seven steps of a round, and where the run is now",
     "diff": "what Bedlam read in your patch. /diff 1: cycle 1's",
     "calls": "model calls per call site: model, tokens, latency",
     "cost": "what your choice cost, measured live",
@@ -278,6 +279,16 @@ COMMANDS: Final = {
     "choose": "your side of the trade-off: /choose a or /choose b",
     "quit": "leave Bedlam, same as Q",
 }
+# /loop: the header's step titles, each with what happens at it.
+LOOP_STEPS: Final = (
+    ("RESEARCHING", "Tavily searches your dependencies"),
+    ("CHOOSING", "a specialist picks one fault"),
+    ("BREAKING", "the fault goes in, one layer"),
+    ("MEASURING", "probes read the damage"),
+    ("YOUR TURN", "you patch it and press P"),
+    ("TESTING YOUR FIX", "the same fault, against your patch"),
+    ("READING YOUR FIX", "Nemotron reads the diff for gaps"),
+)
 # The logs /zoom can fill the screen with.
 ZOOMS: Final = ("timeline", "agent")
 # What Tab completes in the command line: every command, then the
@@ -731,6 +742,31 @@ class BedlamApp(App[int]):
             f"  → {routed['specialist']} specialist ({basis}). /why {cycle} lists the results",
             style=_SOFT,
         )
+
+    def _command_loop(self, arg: str) -> None:
+        """One round's steps top to bottom, the current one marked."""
+        cycle, escalated = self._cycle, self._escalated
+        rounds = [
+            f"round {n}  " + ("done" if n < cycle or escalated else "now" if n == cycle else "next")
+            for n in range(1, MAX_CYCLES + 1)
+        ]
+        after = "the trade-off  now" if escalated else "then the trade-off"
+        self._say("", style=_SOFT)
+        self._say("   " + "      ".join([*rounds, after]), style=_SOFT)
+        self._say("", style=_SOFT)
+        current = 0 if escalated else self.now.step
+        for n, (title, about) in enumerate(LOOP_STEPS, 1):
+            here = n == current
+            line = f"   {n}  {title:<16}{'◀' if here else ' '}   {about}"
+            self._say(line, style=f"bold {ACCENT}" if here else _SOFT)
+            self._say("   │", style=_SOFT)
+        if cycle < MAX_CYCLES and not escalated:
+            self._say(f"   └──→  round {cycle + 1} starts at 1, aimed at the gap", style=_SOFT)
+        else:
+            self._say(f"   └──→  no round {MAX_CYCLES + 1}: the trade-off is next", style=_SOFT)
+        self._say("", style=_SOFT)
+        tail = "   after round 2:   TRADE-OFF  →  YOUR CHOICE  →  THE COST"
+        self._say(tail, style=f"bold {ACCENT}" if escalated else _SOFT)
 
     def _command_diff(self, arg: str) -> None:
         patch, analysis = self._patch, self._analysis
