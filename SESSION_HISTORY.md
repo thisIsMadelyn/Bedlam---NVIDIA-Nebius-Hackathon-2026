@@ -23,6 +23,35 @@ badges of either kind.
 
 ---
 
+## Session [2026-10-22-2210]
+
+- **Start status:** `b250165`, Phase 5 in progress. Run in parallel with
+  session 2026-10-22-1520 at first. The Devpost fields were not drafted,
+  and the README had no screenshot and no "why a terminal" section.
+- **End status:** `0d723ab` plus this entry. 201 tests, lint clean. The
+  replay recording was not re-recorded: no prompt or model-map change.
+  Still open in Phase 5: clean run 3 and a fresh clone on another machine.
+- **Badges:**
+  - 🆕 Addition — `docs/devpost.md`: the Devpost description, the NVIDIA
+    and Token Factory field, and a feedback draft (`06e57d8`, `bd51003`,
+    `f18156c`). PLAN.md Phase 6 gained the terminal and Nebius framing
+    (`668130a`).
+  - 🆕 Addition — README: "Why a terminal, and why local", the limits say
+    what Nebius does, "Models and Nebius usage" rewritten to lead with
+    Token Factory, the jester moved below setup, and a screenshot of a run
+    under the intro (`abb09b6`, `733715f`, `7094249`, `a070364`,
+    `5a9ab7b`, `c457b7d`).
+  - 🐛 Bug fix — each health bar follows the status beside it: api was red
+    beside UP under a cache fault, and a down layer turned green once the
+    fault was lifted (`2945b27`).
+  - 🐛 Bug fix — TUI panels repaint only when their text changes; every
+    update had re-laid out the whole screen, which flickered (`b38c32e`).
+  - 🐛 Bug fix — the routing voice line "the search results voted. api
+    lost." read as api being ruled out; it now says the vote went to that
+    layer (`1a663d4`).
+  - 🐛 Bug fix — a probe that times out shows "TimeoutError: no answer in
+    2000 ms" instead of a bare "TimeoutError:" (`0d723ab`).
+
 ## Session [2026-10-22-1520]
 
 - **Start status:** `8df54c9`, working tree clean. Phase 5 in progress:
