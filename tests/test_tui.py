@@ -20,10 +20,18 @@ from bedlam.guide import EARLY_PRESS
 from bedlam.loop import MAX_CYCLES, LoopDeps, run
 from bedlam.models.client import ModelClient
 from bedlam.patches import ScriptedPatchSource
-from bedlam.search.manifest import load_manifest
+from bedlam.search.manifest import load_manifest, lookup
+from bedlam.search.query import _TEMPLATES, SearchQuery
 from bedlam.search.tavily import SearchClient
 from bedlam.trace import Trace
-from bedlam.tui import ACCENT, WIDTH, BedlamApp, GatedPatchSource, routing_lines
+from bedlam.tui import (
+    ACCENT,
+    WIDTH,
+    BedlamApp,
+    GatedPatchSource,
+    _query_label,
+    routing_lines,
+)
 from bedlam.voice import MORAL, SIGN_OFF
 
 SIZE = (WIDTH, 30)
@@ -338,6 +346,18 @@ ROUTED = {
         _result(None, 0.4, 6),
     ],
 }
+
+
+def test_a_templated_query_says_so_and_fits_at_82() -> None:
+    manifest = load_manifest()
+    for name, term in _TEMPLATES:
+        dep = lookup(manifest, name)
+        assert dep is not None, f"template {name!r} is not a target dependency"
+        query = SearchQuery(dep.name, dep.version, term, templated=True).to_dict()
+        line = f"tavily  {_query_label(query)}"
+        assert line.endswith("  (templated)") and len(line) <= 73
+    plain = SearchQuery("redis", "7.4.0", "connection reset under load").to_dict()
+    assert _query_label(plain) == "redis 7.4.0 connection reset under load"
 
 
 @pytest.mark.parametrize("width", [73, 111], ids=["82 minimum", "wide"])

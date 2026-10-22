@@ -50,6 +50,7 @@ def _formulate(answer: dict) -> tuple:
             symptom=None,
             analysis=None,
             previous_queries=[],
+            rng=random.Random(1),
         )
     )
 
@@ -77,8 +78,9 @@ def test_query_version_is_filled_from_the_manifest_not_the_model() -> None:
 )
 def test_queries_never_target_the_boilerplate_or_unknown_deps(bad: dict) -> None:
     good = {"dependency": "redis", "failure_term": "socket connect hangs forever"}
-    with pytest.raises(ModelCallError):
-        _formulate({"queries": [bad, good]})
+    queries = _formulate({"queries": [bad, good]})
+    assert [q.templated for q in queries] == [True], "the whole reply is rejected"
+    assert not any("boilerplate" in q.text or "notadep" in q.text for q in queries)
 
 
 def test_a_repeated_query_is_named_in_the_rejection_so_the_retry_can_fix_it() -> None:
@@ -97,6 +99,7 @@ def test_a_repeated_query_is_named_in_the_rejection_so_the_retry_can_fix_it() ->
             symptom=None,
             analysis=None,
             previous_queries=[previous],
+            rng=random.Random(1),
         )
     )
 
@@ -117,6 +120,7 @@ def _formulate_with(reply: dict, previous: list[str]):
             symptom=None,
             analysis=None,
             previous_queries=previous,
+            rng=random.Random(1),
         )
     )
 
@@ -132,12 +136,33 @@ def test_a_query_repeated_on_every_attempt_leaves_the_run_one_live_search() -> N
     assert all(q.short for q in queries), "a short round must say so in the trace"
 
 
-def test_no_usable_query_on_any_attempt_still_stops_the_run() -> None:
+def test_no_usable_query_on_any_attempt_searches_one_templated_query() -> None:
     previous = "asyncpg 0.31.0 pool exhaustion not recovering"
     repeat = {"dependency": "asyncpg", "failure_term": "pool exhaustion not recovering"}
 
+    queries = _formulate_with({"queries": [repeat]}, [previous])
+
+    assert len(queries) == 1 and queries[0].templated, "the trace must say it was templated"
+    assert lookup(load_manifest(), queries[0].dependency).version == queries[0].version
+    assert queries[0].text not in {previous}
+    assert queries == _formulate_with({"queries": [repeat]}, [previous]), "seeded, not random"
+
+
+def test_a_templated_query_is_never_one_already_searched() -> None:
+    import bedlam.search.query as query_module
+
+    manifest = load_manifest()
+    every = [
+        f"{dep} {lookup(manifest, dep).version} {term}" for dep, term in query_module._TEMPLATES
+    ]
+    repeat = {"dependency": "asyncpg", "failure_term": "pool exhaustion not recovering"}
+    previous = ["asyncpg 0.31.0 pool exhaustion not recovering", *every[1:]]
+
+    queries = _formulate_with({"queries": [repeat]}, previous)
+    assert [q.text for q in queries] == every[:1]
+
     with pytest.raises(ModelCallError, match="already searched"):
-        _formulate_with({"queries": [repeat]}, [previous])
+        _formulate_with({"queries": [repeat]}, [*previous, every[0]])
 
 
 # --- catalog and specialists ------------------------------------------------

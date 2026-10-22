@@ -228,9 +228,12 @@ Artifacts:
   re-test, then a trade-off you pick." The baseline screen itself lasts
   milliseconds, so the line covers round 1's lead-in instead. Templated,
   76 columns
-- No-query abort (judges' meeting, 22 Oct): a run still stops when Nano
-  returns no valid Tavily query after its retries. Decide before freeze:
-  fix it, or leave it documented in `LIMITATIONS.md`
+- No-query abort (judges' meeting, 22 Oct; fixed 22 Oct): when Nano
+  returns no valid Tavily query after its retries, one templated query is
+  searched instead of stopping the run. A seeded pick from a fixed list of
+  (dependency, failure term) pairs in `bedlam/search/query.py`, version
+  from the lockfile, never one already searched. No model call; the search
+  and routing stay live. The timeline marks it `(templated)`
 
 Done when:
 - [ ] Three clean runs in a row, no manual intervention

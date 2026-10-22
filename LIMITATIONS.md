@@ -29,10 +29,13 @@ this file is about the edges.
   it used (`search`, `symptom` or `seeded`), and the screen shows it.
 - **A failed synthesis does not stop the round.** Fault selection falls back
   to the specialist's own fault options, under the same rules.
-- **No valid query fails the run.** Nano writes the Tavily queries. If it
-  returns at least one valid query, the round goes on with fewer searches.
-  If every attempt returns none, the run stops with an error. Nano has no
-  fallback model.
+- **No valid query falls back to a templated one.** Nano writes the Tavily
+  queries. If it returns at least one valid query, the round goes on with
+  fewer searches. If every attempt returns none, Bedlam searches one
+  templated query instead: a seeded pick from a fixed list of dependency and
+  failure-term pairs, never one already searched. The search and the routing
+  on its results stay live, and the timeline marks the query `(templated)`.
+  Nano has no fallback model.
 - **The diff analysis is a model's reading.** Super reports what a patch
   defends and what it leaves open. That reading picks the next direction of
   attack; it is not a proof.

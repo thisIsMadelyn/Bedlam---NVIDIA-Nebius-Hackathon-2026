@@ -154,6 +154,7 @@ async def run(deps: LoopDeps, trace: Trace) -> Trace:
             symptom=symptom,
             analysis=analysis,
             previous_queries=previous_queries,
+            rng=seeding.rng(deps.root_seed, f"query:{cycle}"),
         )
         previous_queries += [q.text for q in queries]
         record["queries"] = [q.to_dict() for q in queries]

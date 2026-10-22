@@ -30,6 +30,7 @@ from bedlam.replay import (
     RecordingSearchBackend,
     RecordingTransport,
     ReplayAppProbe,
+    ReplayMismatchError,
     ReplayProbe,
     ReplaySearchBackend,
     ReplayTransport,
@@ -65,8 +66,11 @@ def _replay(recording: Recording) -> tuple[list[str], int, list[str]]:
     trace = Trace(root_seed=recording.root_seed, manifest=manifest)
     try:
         asyncio.run(run(deps, trace))
-    except ModelCallError:
-        pass  # the mismatch that caused it is in `transport.mismatches`
+    except (ModelCallError, ReplayMismatchError):
+        # The mismatch that caused it is in `transport.mismatches`. A failed
+        # query formulation searches a templated query, so the run can also
+        # end on the search side.
+        pass
     sequence = trace.to_dict(models, search)["fault_sequence"]
     unused = transport.unused() + backend.unused() + probe.unused()
     unused += app_probe.unused() if app_probe else 0

@@ -12,10 +12,16 @@ still falls short -- Nano repeating an earlier round's query is the usual
 case -- the run goes on with the most new queries any attempt produced, as
 long as there is at least one. That is logged and marked on the queries:
 one live search is worth more than a stopped run.
+
+If no attempt produced a single usable query, one templated query is
+searched instead: a seeded pick from a fixed list of (dependency, failure
+term) pairs, version from the lockfile, never one already searched. No
+model call; the search and the routing on its results stay live.
 """
 
 from __future__ import annotations
 
+import random
 import re
 from dataclasses import asdict, dataclass
 from typing import Any, Final
@@ -34,6 +40,13 @@ _LOG = get_logger("bedlam.search.query")
 QUERIES_PER_CYCLE: Final = 2
 _BANNED_TERMS: Final = re.compile(r"boilerplate|benavlabs", re.IGNORECASE)
 _TERM_WORDS: Final = (2, 8)
+# One pair per target layer and then some, so two cycles can never run out.
+_TEMPLATES: Final = (
+    ("asyncpg", "connection timeout under load"),
+    ("sqlalchemy", "connection pool exhaustion"),
+    ("redis", "connection reset under load"),
+    ("fastapi", "request hangs on slow dependency"),
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +57,9 @@ class SearchQuery:
     # True when the round ran short: every attempt fell short of
     # QUERIES_PER_CYCLE new queries, and this one was the best left.
     short: bool = False
+    # True when no attempt held a usable query and this one came from
+    # _TEMPLATES, with no model call.
+    templated: bool = False
 
     @property
     def text(self) -> str:
@@ -105,13 +121,14 @@ async def formulate(
     symptom: Symptom | None,
     analysis: DiffAnalysis | None,
     previous_queries: list[str],
+    rng: random.Random,
 ) -> tuple[SearchQuery, ...]:
     best: list[SearchQuery] = []
     try:
         return await _ask(client, manifest, history, symptom, analysis, previous_queries, best)
     except ModelCallError as exc:
         if not best:
-            raise
+            return (_templated(manifest, set(previous_queries), rng, exc),)
         _LOG.warning(
             "query formulation short",
             extra={
@@ -123,6 +140,33 @@ async def formulate(
             },
         )
         return tuple(SearchQuery(q.dependency, q.version, q.failure_term, short=True) for q in best)
+
+
+def _templated(
+    manifest: tuple[Dependency, ...],
+    previous: set[str],
+    rng: random.Random,
+    exc: ModelCallError,
+) -> SearchQuery:
+    """One query from _TEMPLATES, never one already searched.
+
+    Raises:
+        ModelCallError: `exc`, if every template is spent or off the manifest.
+    """
+    left = [
+        SearchQuery(dep.name, dep.version, term, templated=True)
+        for name, term in _TEMPLATES
+        if (dep := lookup(manifest, name)) is not None
+    ]
+    left = [query for query in left if query.text not in previous]
+    if not left:
+        raise exc
+    query = rng.choice(left)
+    _LOG.warning(
+        "query formulation failed, templated query",
+        extra={"fields": {"query": query.text, "error": str(exc)}},
+    )
+    return query
 
 
 async def _ask(

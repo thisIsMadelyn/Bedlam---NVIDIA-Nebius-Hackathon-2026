@@ -172,6 +172,11 @@ def latency_bar(latency_ms: float | None, size: int = _BAR_MIN) -> str:
     return "█" * filled + "░" * (size - filled)
 
 
+def _query_label(query: dict[str, Any]) -> str:
+    """A query as shown on screen; a templated one says so."""
+    return query["text"] + ("  (templated)" if query.get("templated") else "")
+
+
 class GatedPatchSource:
     """Holds the patch back until the developer says it is in.
 
@@ -709,7 +714,7 @@ class BedlamApp(App[int]):
         steps = self._cycles[cycle]
         self._say(f"  cycle {cycle} of {MAX_CYCLES}", style=f"bold {ACCENT}")
         if "searching" in steps:
-            queries = " · ".join(q["text"] for q in steps["searching"]["queries"])
+            queries = " · ".join(_query_label(q) for q in steps["searching"]["queries"])
             self._field("searched", queries)
         if "routed" in steps:
             routed = steps["routed"]
@@ -983,7 +988,7 @@ class BedlamApp(App[int]):
 
     def _on_searching(self, fields: dict[str, Any]) -> None:
         for query in fields["queries"]:
-            self._say(f"tavily  {query['text']}", style=ACCENT)
+            self._say(f"tavily  {_query_label(query)}", style=ACCENT)
 
     def _on_routed(self, fields: dict[str, Any]) -> None:
         self._routed = fields
