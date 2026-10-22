@@ -471,8 +471,8 @@ item is scheduled into its phase above.
   new features before freeze beyond what is already approved; the video
   shows the loop, the trade-off and `/why`.
 - **Action first, onboarding, which model.** Model attribution is already
-  on screen (AGENT panel). Phase 5 adds one onboarding line on the
-  baseline screen.
+  on screen (AGENT panel). Phase 5 adds one onboarding line in the NOW
+  box until the first turn (landed 22 Oct).
 - **Publish limitations.** Documented failure cases live in
   `LIMITATIONS.md`, separate from the design guarantees in the README.
 - No accessibility claim: Bedlam was not built for it, so the submission
@@ -500,3 +500,8 @@ still in `/cycles`, and taller screens show both.
 band A → B → A, about 3 s each way at 10 frames a second, while the choice
 waits; once chosen it travels to that letter and rests. Same glyphs and
 shades; driven by a frame counter, display only.
+
+**Fixed 22 Oct:** the cards changed proportions on the first frame and
+after `/log`, because a hidden or not-yet-laid-out panel measured 0 columns
+and the cards fell back to 76. They are now sized from the frame, so they
+keep one width through the run.
