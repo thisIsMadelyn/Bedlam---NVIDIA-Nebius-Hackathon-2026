@@ -1275,7 +1275,12 @@ class BedlamApp(App[int]):
         fixed = sum(self.query_one(f"#{name}").outer_size.height for name in _FIXED_ROWS)
         room = self.query_one("#frame").size.height - fixed
         used = body.plain.count("\n") + 2
-        if recap and used + 1 + len(recap) + _STRIP_ROWS <= room:
+        left = room - used - 1 - len(recap)  # the replies' rows beside the recap
+        # The empty replies show the field: the recap gives way when only
+        # leaving it out makes room for the field (borders and band rows).
+        field = FIELD_MIN_HEIGHT + 2
+        yields = not self._page_rows and left < field <= room - used
+        if recap and left >= _STRIP_ROWS and not yields:
             body.append("\n")
             for line in recap:
                 body.append_text(line)

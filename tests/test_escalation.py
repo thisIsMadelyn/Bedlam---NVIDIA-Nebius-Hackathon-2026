@@ -354,6 +354,24 @@ def test_the_field_fills_the_empty_replies_and_the_first_reply_takes_its_place()
     assert not any("▒" in row for row in small), "5 rows cannot hold a 14-row field"
 
 
+def test_while_the_choice_waits_the_recap_gives_way_to_the_field() -> None:
+    async def scenario(size: tuple[int, int]) -> tuple[bool, bool]:
+        app = BedlamApp(1729, ScriptedPatchSource(), lambda app: asyncio.sleep(3600))
+        async with app.run_test(size=size) as pilot:
+            for cycle, fault in ((1, "db.timeout.0"), (2, "cache.connection_cut")):
+                app._cycles[cycle] = {"injecting": {"fault": fault}}
+            app.on_loop_event("trade_off", {"trade_off": TRADE_OFF_FIELDS})
+            for _ in range(3):
+                await pilot.pause(0.2)
+            rows = [s.text for s in app.screen._compositor.render_strips()]
+            return any("░" in row for row in rows), any("how you got here" in row for row in rows)
+
+    field, recap = asyncio.run(scenario((82, 36)))
+    assert field and not recap, "the recap would leave the replies too short for the field"
+    field, recap = asyncio.run(scenario((82, 45)))
+    assert field and recap, "a taller screen has room for both"
+
+
 @pytest.mark.parametrize("rows", [7, 8, 11])
 def test_a_shorter_log_gets_the_same_band_scaled(rows: int) -> None:
     plain = [line.plain for line in postmortem_field(rows)]

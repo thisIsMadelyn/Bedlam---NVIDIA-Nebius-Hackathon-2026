@@ -485,6 +485,8 @@ command replies get the rest. The empty reply log shows a dim field (from
 a Claude Design session): a thin band rising from A to B in two shades, at
 4:1 contrast, until the first command reply takes its place.
 
-**First fix on 22 Oct:** the field shows only after the choice is made
-(on the decided page), not while the trade-off waits for the choice,
-which is where it belongs.
+**Fixed 22 Oct:** the field showed only after the choice, not while the
+trade-off waits, on screens under about 42 rows: the "how you got here"
+recap left the replies too few rows for it. While the replies are empty,
+the recap now gives way when only that makes room for the field; it is
+still in `/cycles`, and taller screens show both.
