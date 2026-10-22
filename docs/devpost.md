@@ -1,7 +1,7 @@
 # Devpost description (draft)
 
 Draft for the Phase 8 submission: the project description, then the
-separate NVIDIA / Token Factory field at the end.
+separate NVIDIA / Token Factory field, then the feedback field.
 
 ---
 
@@ -164,3 +164,60 @@ Two models, each placed deliberately, beat four used for show.
 The app Bedlam attacks runs locally in Docker. Bedlam sends real faults to
 it, and Nebius's acceptable-use policy forbids attack-like traffic against
 Nebius-hosted systems. Nebius runs Bedlam's brain, never its victim.
+
+---
+
+# Feedback (separate field)
+
+To rewrite in my own voice before submitting.
+
+## Feedback
+
+**Nebius Token Factory**
+
+- **The OpenAI-compatible endpoint made setup simple.** I used the standard
+  `openai` Python client with a different base URL and had a working call
+  within minutes. That let me spend my time on the agent instead of the
+  integration.
+- **Temperature 0 with a fixed seed doesn't give repeatable output.** I
+  designed my demo's reproducibility around seeded calls at temperature 0,
+  then found that two live runs with the same seed could still pick different
+  faults. I had to switch to recording a live run and replaying it in tests.
+  - *Suggestion:* state clearly in the docs which models and settings, if
+    any, guarantee repeatable output. Builders who need reproducible demos
+    could then plan for it from day one.
+- **Model ID casing is inconsistent, and normalised IDs are rejected.**
+  `nvidia/nemotron-3-super-120b-a12b` is lowercase, while
+  `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` is mixed case. My first instinct
+  was to lowercase them, and the API rejected the result.
+  - *Suggestion:* accept IDs case-insensitively, or say clearly in the model
+    catalogue that IDs must be copied exactly.
+- **Turning off Nemotron 3's thinking mode** is done through
+  `chat_template_kwargs` in the request's `extra_body`, outside the standard
+  OpenAI parameters. An example on each Nemotron 3 model page showing thinking
+  on and off from the OpenAI client would make it easy to spot.
+
+**NVIDIA Nemotron**
+
+- **Super and Nano work well as a pair.** Super handled the reasoning steps
+  (analysing a code diff, turning messy issue threads into concrete fault
+  ideas), and Nano handled fast classification.
+- **Nano's labels needed checking.** When labelling search results by layer,
+  Nano sometimes returned labels its own input didn't support. I added a
+  check that each label names something the result actually mentions, with
+  one retry. With that check in place, Nano was reliable enough to route on.
+- **A low token limit truncated JSON mid-reply.** With up to ten results per
+  call, a 256-token limit cut the JSON off partway. I raised it to 768. If
+  Token Factory supports a JSON or structured-output mode for Nemotron, a
+  pointer to it in the quickstart would help; I parsed the first JSON value
+  out of each reply instead.
+
+**Tavily**
+
+- **Domain filtering made the results useful.** Limiting results to GitHub
+  issues, blogs and changelogs, and excluding vulnerability databases, turned
+  generic results into actual failure stories, which is what my agent needed.
+- **Query wording mattered a lot.** Searching for a dependency's name, its
+  version and a failure term returned useful results. Searching for the app's
+  own name returned noise. A short "how to write queries for agents" guide
+  would help other builders find this faster.
