@@ -73,21 +73,56 @@ make smoke               # verifies both live APIs
 
 ## Models and Nebius usage
 
-Documented in full in `PLAN.md` section 2 and in `bedlam/models/map.py`, which
-is the single source of truth. Summary:
+Every decision Bedlam makes is a live call to NVIDIA Nemotron on Nebius Token
+Factory. Nothing is pre-computed. Bedlam calls Token Factory through its
+OpenAI-compatible endpoint at runtime, with seven call sites in each run's
+loop. Without Token Factory, Bedlam can't pick a fault, read a search result
+or judge a patch.
 
-| Call site | Model | temp |
-|---|---|---|
-| Probe classification | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` | 0.0 |
-| Tavily query formulation | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` | 0.0 |
-| Layer classification | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` | 0.0 |
-| Diff analysis | `nvidia/nemotron-3-super-120b-a12b` | 0.1 |
-| Search synthesis | `nvidia/nemotron-3-super-120b-a12b` | 0.3 |
-| Fault selection | `nvidia/nemotron-3-super-120b-a12b` | 0.0 + seed |
-| Trade-off escalation | `nvidia/nemotron-3-super-120b-a12b` | 0.4 |
+### Models
 
-All inference runs through the Nebius Token Factory OpenAI-compatible endpoint.
-Bedlam's own voice is templated, not generated -- deliberately, for determinism.
+- `nvidia/nemotron-3-super-120b-a12b` (Super): the steps that need reasoning.
+- `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` (Nano): fast classification and
+  extraction.
+
+### Where each one runs
+
+| Step | Model | Temp | Why this model |
+|---|---|---|---|
+| Classify the app's health from probes | Nano | 0.0 | Picks a label from a fixed list; no judgement needed |
+| Write the Tavily search queries | Nano | 0.0 | Structured extraction: dependency, version, failure term |
+| Label search results by layer | Nano | 0.0 | Classification that routes the round to a specialist |
+| Analyse the developer's patch | Super | 0.1 | Reasoning over code: what the patch defends and what it leaves open |
+| Turn search results into candidate faults | Super | 0.0 | Messy GitHub-issue prose into concrete hypotheses |
+| Select the next fault | Super | 0.0 | Must reproduce, so it isn't sampled |
+| Build the final trade-off | Super | 0.4 | The part the developer reads closely |
+
+### How it's used
+
+- **One file defines the models.** `bedlam/models/map.py` sets every call
+  site's model, temperature, token limit and fallback, and nothing else in the
+  code names a model.
+- **Seeded.** Every call's seed comes from one root seed, so one setting
+  reproduces a whole run.
+- **Reasoning mode off.** Nemotron 3's thinking mode is switched off at every
+  call site: each call asks for a small JSON object, and the full loop has to
+  fit in a short demo.
+- **Fallback is visible.** If Super fails, the call retries on Nano. The
+  fallback is logged as a warning and flagged on screen, never silent.
+- **Every call is on screen.** The AGENT panel shows each call as it happens:
+  step, model, tokens, latency and outcome. `/calls` lists every model call
+  per call site.
+- **Bedlam's own voice is templated, not generated**, deliberately, for
+  determinism.
+
+### What I chose not to use
+
+- **Nemotron Ultra:** too slow for a loop that has to finish inside a
+  sub-3-minute demo.
+- **Nemotron Lightning:** no step needs a 1M-token context.
+
+Two models, each placed deliberately, beat four used for show. Why the target
+itself never runs on Nebius is under "Why a terminal, and why local" above.
 
 ## License
 

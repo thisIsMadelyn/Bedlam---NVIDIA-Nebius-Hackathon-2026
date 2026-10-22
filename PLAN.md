@@ -263,7 +263,8 @@ Artifacts:
   to it, and Nebius's acceptable-use policy forbids attack-like traffic
   against Nebius-hosted systems. Nebius runs Bedlam's brain, never its
   victim." Phase 8 reuses it word for word in the Devpost description
-- "Models and Nebius usage" leads with what Nebius does (raised 22 Oct),
+- "Models and Nebius usage" leads with what Nebius does (raised 22 Oct;
+  landed the same day),
   not with a pointer to `PLAN.md`. Draft: "Every decision Bedlam makes is a
   live call to NVIDIA Nemotron on Nebius Token Factory: seven call sites,
   from reading probe results to building the final trade-off. Nothing is
@@ -271,7 +272,8 @@ Artifacts:
   tokens, latency, outcome." Never write "inference only" without first
   saying what that inference does
 - Fix the README model table: search synthesis is temperature 0.0 in
-  `map.py` and section 2, not the 0.3 the README shows
+  `map.py` and section 2, not the 0.3 the README shows (fixed 22 Oct with
+  the section rewrite)
 - `LIMITATIONS.md` (created 22 Oct): kept current with every change before
   content freeze, so it matches the shipped build
 - Developer manual (raised 21 Oct): for the developer running the app. The
