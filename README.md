@@ -29,6 +29,23 @@ Bedlam's brain, never its victim.
   a live Nemotron call on Nebius Token Factory, but Nebius never hosts the app
   being attacked.
 
+## Status
+
+Phases 1–4 complete: fault injection, the headless decision chain, the
+terminal UI and the trade-off escalation run end to end. Next: Phase 5,
+rehearsal and feature freeze. See `PLAN.md` for the build schedule and the
+current phase.
+
+## Setup
+
+Requires Python 3.12+ and Docker.
+
+```bash
+cp .env.example .env     # then fill in NEBIUS_API_KEY and TAVILY_API_KEY
+pip install -e ".[dev]"
+make smoke               # verifies both live APIs
+```
+
 ## The jester
 
 <p align="center">
@@ -53,23 +70,6 @@ changes mood with each step of the loop:
 Like Bedlam's voice, the jester is display only: no randomness, no model
 call, and nothing it shows feeds a decision. The small jester appears from 93
 columns up, so the screen stays fully readable at the 82-column minimum.
-
-## Status
-
-Phases 1–4 complete: fault injection, the headless decision chain, the
-terminal UI and the trade-off escalation run end to end. Next: Phase 5,
-rehearsal and feature freeze. See `PLAN.md` for the build schedule and the
-current phase.
-
-## Setup
-
-Requires Python 3.12+ and Docker.
-
-```bash
-cp .env.example .env     # then fill in NEBIUS_API_KEY and TAVILY_API_KEY
-pip install -e ".[dev]"
-make smoke               # verifies both live APIs
-```
 
 ## Models and Nebius usage
 
