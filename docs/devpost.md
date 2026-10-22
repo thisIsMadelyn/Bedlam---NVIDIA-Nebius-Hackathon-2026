@@ -1,8 +1,7 @@
 # Devpost description (draft)
 
-Draft for the Phase 8 submission. The separate NVIDIA / Token Factory field
-is not here: it comes from the README's "Models and Nebius usage" section
-(Phase 6).
+Draft for the Phase 8 submission: the project description, then the
+separate NVIDIA / Token Factory field at the end.
 
 ---
 
@@ -103,3 +102,65 @@ Full list: [LIMITATIONS.md link]
 ## What's next
 
 Support other target apps, and add fault types beyond the network.
+
+---
+
+# NVIDIA models and Nebius Token Factory (separate field)
+
+Also the source for the README's "Models and Nebius usage" section (Phase 6).
+
+## NVIDIA models and Nebius Token Factory
+
+Every decision Bedlam makes is a live call to NVIDIA Nemotron on Nebius Token
+Factory. Nothing is pre-computed. Bedlam calls Token Factory through its
+OpenAI-compatible endpoint at runtime, with seven call sites in each run's
+loop. Without Token Factory, Bedlam can't pick a fault, read a search result
+or judge a patch.
+
+**Models**
+
+- `nvidia/nemotron-3-super-120b-a12b` (Super): the steps that need reasoning.
+- `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` (Nano): fast classification and
+  extraction.
+
+**Where each one runs**
+
+| Step | Model | Temp | Why this model |
+|---|---|---|---|
+| Classify the app's health from probes | Nano | 0.0 | Picks a label from a fixed list; no judgement needed |
+| Write the Tavily search queries | Nano | 0.0 | Structured extraction: dependency, version, failure term |
+| Label search results by layer | Nano | 0.0 | Classification that routes the round to a specialist |
+| Analyse the developer's patch | Super | 0.1 | Reasoning over code: what the patch defends and what it leaves open |
+| Turn search results into candidate faults | Super | 0.0 | Messy GitHub-issue prose into concrete hypotheses |
+| Select the next fault | Super | 0.0 | Must reproduce, so it isn't sampled |
+| Build the final trade-off | Super | 0.4 | The part the developer reads closely |
+
+**How it's used**
+
+- **One file defines the models.** `bedlam/models/map.py` sets every call
+  site's model, temperature, token limit and fallback, and nothing else in the
+  code names a model.
+- **Seeded.** Every call's seed comes from one root seed, so one setting
+  reproduces a whole run.
+- **Reasoning mode off.** Nemotron 3's thinking mode is switched off at every
+  call site: each call asks for a small JSON object, and the full loop has to
+  fit in a short demo.
+- **Fallback is visible.** If Super fails, the call retries on Nano. The
+  fallback is logged as a warning and flagged on screen, never silent.
+- **Every call is on screen.** The AGENT panel shows each call as it happens:
+  step, model, tokens, latency and outcome. `/calls` lists every model call
+  per call site.
+
+**What I chose not to use**
+
+- **Nemotron Ultra:** too slow for a loop that has to finish inside a
+  sub-3-minute demo.
+- **Nemotron Lightning:** no step needs a 1M-token context.
+
+Two models, each placed deliberately, beat four used for show.
+
+**Why the target doesn't run on Nebius**
+
+The app Bedlam attacks runs locally in Docker. Bedlam sends real faults to
+it, and Nebius's acceptable-use policy forbids attack-like traffic against
+Nebius-hosted systems. Nebius runs Bedlam's brain, never its victim.
