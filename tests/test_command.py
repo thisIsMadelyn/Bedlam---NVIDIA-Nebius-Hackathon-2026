@@ -210,6 +210,9 @@ def test_zoom_fills_the_screen_with_one_log_and_zoom_alone_ends_it() -> None:
             assert timeline.display and not agent.display
             await _type(pilot, "zoom")
             assert timeline.display and agent.display and system.display
+            assert not any("zoom what?" in row for row in _timeline(app))
+            await _type(pilot, "zoom")  # nothing zoomed: say so, not nothing
+            assert any("zoom what?" in row for row in _timeline(app))
             await _type(pilot, "zoom everything")
             assert any("zoom what?" in row for row in _timeline(app))
 

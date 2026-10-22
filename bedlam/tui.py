@@ -846,7 +846,9 @@ class BedlamApp(App[int]):
             self._say("  /zoom works on the run log. /log shows it", style=_SOFT)
             return
         log = arg.lower()
-        if log and log not in ZOOMS:
+        # /zoom alone ends a zoom; with none on, it would change nothing.
+        zoomed = self.query_one("#frame").has_class("-zoomed")
+        if (log and log not in ZOOMS) or (not log and not zoomed):
             self._say("zoom what? /zoom timeline or /zoom agent", style=_SOFT)
             return
         body = self.query_one("#body")
