@@ -13,7 +13,7 @@ case -- the run goes on with the most new queries any attempt produced, as
 long as there is at least one. That is logged and marked on the queries:
 one live search is worth more than a stopped run.
 
-If no attempt produced a single usable query, one templated query is
+If Nano replied but no attempt held a single usable query, one templated query is
 searched instead: a seeded pick from a fixed list of (dependency, failure
 term) pairs, version from the lockfile, never one already searched. No
 model call; the search and the routing on its results stay live.
@@ -128,6 +128,9 @@ async def formulate(
         return await _ask(client, manifest, history, symptom, analysis, previous_queries, best)
     except ModelCallError as exc:
         if not best:
+            # An outage is not a missing query: stop before spending a search.
+            if not exc.replied:
+                raise
             return (_templated(manifest, set(previous_queries), rng, exc),)
         _LOG.warning(
             "query formulation short",

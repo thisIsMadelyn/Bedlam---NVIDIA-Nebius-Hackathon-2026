@@ -148,6 +148,25 @@ def test_no_usable_query_on_any_attempt_searches_one_templated_query() -> None:
     assert queries == _formulate_with({"queries": [repeat]}, [previous]), "seeded, not random"
 
 
+def test_a_model_outage_stops_the_run_instead_of_templating() -> None:
+    async def down(**_kw):
+        raise ConnectionError("401 Unauthorized")
+
+    with pytest.raises(ModelCallError, match="401") as caught:
+        asyncio.run(
+            formulate(
+                ModelClient(down, root_seed=1, backoff_s=0.0),
+                manifest=load_manifest(),
+                history=[],
+                symptom=None,
+                analysis=None,
+                previous_queries=[],
+                rng=random.Random(1),
+            )
+        )
+    assert not caught.value.replied
+
+
 def test_a_templated_query_is_never_one_already_searched() -> None:
     import bedlam.search.query as query_module
 

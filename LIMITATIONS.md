@@ -35,7 +35,8 @@ this file is about the edges.
   templated query instead: a seeded pick from a fixed list of dependency and
   failure-term pairs, never one already searched. The search and the routing
   on its results stay live, and the timeline marks the query `(templated)`.
-  Nano has no fallback model.
+  If Nano never replies at all (an outage or a bad key), the run stops
+  before any search. Nano has no fallback model.
 - **The diff analysis is a model's reading.** Super reports what a patch
   defends and what it leaves open. That reading picks the next direction of
   attack; it is not a proof.

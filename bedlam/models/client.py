@@ -37,7 +37,15 @@ _THINK_BLOCK = re.compile(r"<think>.*?</think>", re.DOTALL)
 
 
 class ModelCallError(RuntimeError):
-    """Every model in a call site's chain failed or returned unusable output."""
+    """Every model in a call site's chain failed or returned unusable output.
+
+    `replied` is True when at least one model answered with output that failed
+    validation, False when every attempt failed before a reply (an outage).
+    """
+
+    def __init__(self, message: str, *, replied: bool = False) -> None:
+        super().__init__(message)
+        self.replied = replied
 
 
 @dataclass(frozen=True, slots=True)
@@ -194,6 +202,7 @@ class ModelClient:
         chain = [spec.model] + ([spec.fallback] if spec.fallback else [])
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
         last_error = "no attempt made"
+        replied = False
 
         for position, model in enumerate(chain):
             is_fallback = position > 0
@@ -228,6 +237,7 @@ class ModelClient:
                     value = parse(extract_json(response.content))
                 except (ValueError, KeyError, TypeError) as exc:
                     last_error = f"invalid output: {exc}"
+                    replied = replied or response is not None
                     self._record(
                         site,
                         model,
@@ -270,7 +280,9 @@ class ModelClient:
                 )
                 return value
 
-        raise ModelCallError(f"{site.value}: every model in {chain} failed ({last_error})")
+        raise ModelCallError(
+            f"{site.value}: every model in {chain} failed ({last_error})", replied=replied
+        )
 
     def _record(
         self,
