@@ -142,7 +142,7 @@ QUOTES: Final[dict[str, str]] = {
 }
 
 
-# The jester's last word, on the end splash once a run completes. Fixed, not
+# The jester's last word, on the end splash when a completed run is quit. Fixed, not
 # picked: every completed run ends on the same moral.
 MORAL: Final = "it was never stable. you just stopped patching."
 SIGN_OFF: Final = "same time next sprint."

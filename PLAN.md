@@ -407,10 +407,13 @@ options leave room. Commands, all read from the run's own events:
 
 ### End splash
 
-Approved 21 Oct, before Phase 5. When a run completes, the launch splash comes
-back with the jester's moral under the wordmark, fixed text, no model call:
+Approved 21 Oct, before Phase 5. When a completed run is quit, the launch
+splash comes back with the jester's moral under the wordmark, fixed text, no
+model call:
 "it was never stable. you just stopped patching." and, dim, "same time next
-sprint." Any key returns to the frame; Q quits from there.
+sprint." Changed 22 Oct: the run stays on the decided page after the choice,
+for commands and `/log`; Q or `/quit` brings up the moral, and any key on it
+quits. A failed or unfinished run quits straight away.
 
 ### Agent and resource usage on screen
 

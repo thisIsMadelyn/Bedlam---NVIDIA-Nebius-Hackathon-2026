@@ -242,12 +242,19 @@ def test_the_splash_is_centred_and_holds_the_run_until_it_ends(size) -> None:
 
 
 @pytest.mark.parametrize("size", [SIZE, WIDE], ids=["82 minimum", "wide"])
-def test_a_completed_run_ends_on_the_moral_and_a_key_returns_to_the_frame(size) -> None:
+def test_a_completed_run_stays_on_its_page_until_q_brings_up_the_moral(size) -> None:
     async def scenario() -> None:
         app = _app()
         async with app.run_test(size=size) as pilot:
             app.splash_s = 0.1  # past the launch splash: only the end one shows
             await _drive(app, pilot)
+            await pilot.pause(0.3)
+            assert not app.splashing and app.query_one("#frame").display, "left the page"
+            await pilot.press("slash", *"cycles", "enter")
+            await pilot.pause(0.1)
+            assert not app.splashing and app._page_rows, "commands still run after the choice"
+            await pilot.press("q")
+            await pilot.pause(0.1)
             assert app.splashing and not app.query_one("#frame").display
             rows = [s.text for s in app.screen._compositor.render_strips()]
             art = [row for row in rows if row.strip()]
@@ -256,12 +263,25 @@ def test_a_completed_run_ends_on_the_moral_and_a_key_returns_to_the_frame(size) 
             left = min(len(row) - len(row.lstrip()) for row in art)
             right = min(len(row) - len(row.rstrip()) for row in art)
             assert abs(left - right) <= 1, "not centred left to right"
-            await pilot.press("q")
+            assert app.is_running, "Q quit before the moral"
+            await pilot.press("x")
             await pilot.pause(0.1)
-            assert not app.splashing and app.query_one("#frame").display
-            assert app.is_running, "the key that left the moral also quit"
+            assert not app.is_running, "a key on the moral quits"
             baselines = [row for row in app._timeline_rows if row[1].startswith("baseline:")]
-            assert len(baselines) == 1, "leaving the moral started a second run"
+            assert len(baselines) == 1, "the moral started a second run"
+
+    asyncio.run(scenario())
+
+
+def test_slash_quit_on_a_completed_run_also_brings_up_the_moral() -> None:
+    async def scenario() -> None:
+        app = _app()
+        async with app.run_test(size=SIZE) as pilot:
+            app.splash_s = 0.1
+            await _drive(app, pilot)
+            await pilot.press("slash", *"quit", "enter")
+            await pilot.pause(0.1)
+            assert app.splashing and app.moral_shown and app.is_running
 
     asyncio.run(scenario())
 

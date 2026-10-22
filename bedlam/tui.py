@@ -122,7 +122,7 @@ _STRIP_ROWS: Final = 5
 # Labels in /cycle and /cost: two spaces, the label, a space.
 _FIELD: Final = 10
 # How long the launch splash holds before the run starts. Any key skips it.
-# A completed run holds its last frame as long, then the end splash comes up.
+# A completed run stays on its page; Q or /quit brings up the end splash.
 SPLASH_S: Final = 2.5
 
 _BAR_MIN: Final = 20
@@ -341,9 +341,10 @@ class BedlamApp(App[int]):
     ) -> None:
         super().__init__()
         # The jester and the wordmark before the run starts, and with the
-        # moral after it completes; 0 skips both.
+        # moral when a completed run is quit; 0 skips both.
         self.splash_s = splash_s
         self._started = False
+        self.moral_shown = False
         self.root_seed = root_seed
         # Real patch mode: the developer writes the fix and P reads git diff.
         self.real = real
@@ -474,7 +475,8 @@ class BedlamApp(App[int]):
             self._start()
 
     def show_moral(self) -> None:
-        """The end splash: the jester again, with the moral. Any key leaves it."""
+        """The end splash: the jester again, with the moral. Any key quits."""
+        self.moral_shown = True
         below = ((MORAL, f"bold italic {_TEXT}"), (SIGN_OFF, _SOFT))
         splash = self.query_one("#splash", Splash)
         splash.update(jester.splash(_SPLASH_COLOURS, below))
@@ -504,8 +506,6 @@ class BedlamApp(App[int]):
             if "chosen" in self._run_events:
                 self._decided = True
                 self.query_one("#frame").add_class("-escalation")
-            if self.splash_s > 0:
-                self.set_timer(self.splash_s, self.show_moral)
         self._render_chrome()
         if not self.splashing:
             self._home().focus()
@@ -897,6 +897,13 @@ class BedlamApp(App[int]):
         self.action_choose(key)
 
     def _command_quit(self, arg: str) -> None:
+        self.action_quit()
+
+    def action_quit(self) -> None:  # type: ignore[override]
+        """Leave Bedlam. A completed run says its moral first; the next key quits."""
+        if self.exit_code == 0 and self.splash_s > 0 and not self.moral_shown:
+            self.show_moral()
+            return
         self.exit()
 
     def action_choose(self, key: str) -> None:
@@ -1495,6 +1502,9 @@ class Splash(Static, can_focus=True):
     def on_key(self, event: events.Key) -> None:
         event.stop()
         event.prevent_default()
+        if self.app.moral_shown:  # type: ignore[attr-defined]
+            self.app.exit()
+            return
         self.app.end_splash()  # type: ignore[attr-defined]
 
 
