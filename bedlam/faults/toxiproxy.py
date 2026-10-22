@@ -39,27 +39,6 @@ class ToxiproxyClient:
     async def aclose(self) -> None:
         await self._client.aclose()
 
-    async def version(self) -> str:
-        resp = await self._client.get("/version")
-        resp.raise_for_status()
-        return resp.text
-
-    async def list_proxies(self) -> dict[str, Any]:
-        resp = await self._client.get("/proxies")
-        resp.raise_for_status()
-        return resp.json()
-
-    async def get_proxy(self, name: str) -> dict[str, Any]:
-        resp = await self._client.get(f"/proxies/{name}")
-        resp.raise_for_status()
-        return resp.json()
-
-    async def set_proxy_enabled(self, name: str, enabled: bool) -> dict[str, Any]:
-        resp = await self._client.post(f"/proxies/{name}", json={"enabled": enabled})
-        resp.raise_for_status()
-        log_event(_LOG, "proxy toggled", proxy=name, enabled=enabled)
-        return resp.json()
-
     async def list_toxics(self, proxy: str) -> list[dict[str, Any]]:
         resp = await self._client.get(f"/proxies/{proxy}/toxics")
         resp.raise_for_status()
