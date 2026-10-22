@@ -23,6 +23,37 @@ badges of either kind.
 
 ---
 
+## Session [2026-10-22-1315]
+
+- **Start status:** `34a27b0`, working tree clean, 184 tests passing.
+  Phase 5 in progress. The dim field on the trade-off page showed only
+  after the choice on screens under about 42 rows; choosing A or B went
+  straight to the end splash; the field was motionless.
+- **End status:** `9f23fed` plus this entry, working tree clean, 192 tests
+  passing, lint and format clean. No decision-chain change, so the replay
+  fixture stands. Still open: `/log` during the chosen cost's few seconds,
+  the no-query abort decision, the Phase 5 runs (three clean in a row, a
+  fresh clone elsewhere); feature freeze Mon 26 Oct.
+- **Badges:**
+  - 🆕 Addition — `LIMITATIONS.md`: documented failure cases, separate
+    from the design guarantees in the README.
+  - 🆕 Addition — Judges' meeting advice planned into Phases 5–8: the
+    re-break pitch, the cycle-2 cold open, the README restructure and a
+    limitations summary in Devpost.
+  - 🆕 Addition — The run stays on the decided page after the choice, for
+    commands and `/log`; Q or `/quit` brings up the moral, any key quits.
+  - 🆕 Addition — A pendulum glow swings along the trade-off field while
+    the choice waits, then rests on the chosen letter.
+  - 🆕 Addition — Onboarding line in the NOW box until the first turn:
+    "You: watch. Two rounds of break, fix and re-test, then a trade-off
+    you pick."
+  - 🐛 Bug fix — The field showed only after the choice on screens under
+    about 42 rows; the recap now gives way while the replies are empty.
+  - 🐛 Bug fix — The trade-off cards changed width on the first frame and
+    after `/log`; they are now sized from the frame.
+
+---
+
 ## Session [2026-10-21-2230]
 
 - **Start status:** `a2f1275`, working tree clean, 145 tests passing.
