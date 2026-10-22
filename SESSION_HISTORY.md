@@ -23,6 +23,27 @@ badges of either kind.
 
 ---
 
+## Session [2026-10-22-1503]
+
+- **Start status:** `9f23fed`, working tree clean. Phase 5 in progress, run
+  in parallel with session 2026-10-22-1315. Phase 7 (video) had its rules
+  but no format, introduction, outline or script.
+- **End status:** `a03731a` plus this entry. Documentation only, no code
+  change. A report that real patch mode stayed on "press p when it is
+  saved" was looked into and set aside unfixed: the likely cause is edits
+  already saved in the target before the run starts, which the start
+  snapshot absorbs. Still open: the script's take-dependent brackets, filled
+  in when the video is recorded on Wed 28 Oct.
+- **Badges:**
+  - 🆕 Addition — Phase 7 plan: screen recording with a voice-over recorded
+    afterwards and a few captions; a Draft A introduction after the cycle-2
+    cold open; a 2:40 outline; a commands segment (`/why`, `/diff`,
+    `/calls`, `/cost`, `/log`); no repo URL in the video.
+  - 🆕 Addition — `demo/SCRIPT.md`: the voice-over script, segment by
+    segment, with captions and a pre-recording checklist.
+
+---
+
 ## Session [2026-10-22-1315]
 
 - **Start status:** `34a27b0`, working tree clean, 184 tests passing.
