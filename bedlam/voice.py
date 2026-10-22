@@ -42,7 +42,7 @@ LINES: Final[dict[str, tuple[str, ...]]] = {
     "routed": (
         "the evidence points at {layer}. sending in the {specialist} specialist.",
         "{layer} keeps turning up in other people's bug reports. noted.",
-        "the search results voted. {layer} lost.",
+        "the search results voted for {layer}. condolences.",
     ),
     "selected": (
         "{fault}. it seemed rude not to.",
