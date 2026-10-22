@@ -164,10 +164,13 @@ def wrap(text: str, indent: int, width: int = SAY) -> list[str]:
 
 
 def latency_bar(latency_ms: float | None, size: int = _BAR_MIN) -> str:
-    """A log-scaled bar: 1 ms is empty, 2 s and over is full."""
+    """A square-root bar: one cell when healthy, 2 s and over is full.
+
+    A log scale drew 318 ms and 2 s nearly alike; square root keeps a few
+    milliseconds visible and still tells a slow layer from a hung one."""
     if latency_ms is None:
         return "·" * size
-    scale = math.log10(max(latency_ms, 1.0)) / math.log10(_BAR_CEILING_MS)
+    scale = math.sqrt(max(latency_ms, 0.0) / _BAR_CEILING_MS)
     filled = max(1, min(size, round(scale * size)))
     return "█" * filled + "░" * (size - filled)
 
