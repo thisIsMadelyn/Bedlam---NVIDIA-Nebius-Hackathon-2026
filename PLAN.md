@@ -255,7 +255,8 @@ Artifacts:
   re-break, not the break (see "Judges' meeting advice"); a screenshot of
   the cycle-2 moment at the top (`/shot`); the jester section moves below
   setup; a link to `LIMITATIONS.md` beside the stated limits
-- "Why a terminal, and why local" block (raised 22 Oct), right under the
+- "Why a terminal, and why local" block (raised 22 Oct; landed the same
+  day, under the current pitch until the restructure), right under the
   pitch. Draft: "Bedlam is for the developer who has just patched an
   outage, and that developer is already in a terminal next to Docker. The
   app it attacks runs on your machine on purpose: Bedlam sends real faults

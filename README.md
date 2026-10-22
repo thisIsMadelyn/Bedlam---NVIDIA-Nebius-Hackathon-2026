@@ -9,6 +9,14 @@ your patch did not cover. After two cycles it stops breaking things and
 escalates to a performance trade-off that you choose -- it does not choose
 for you.
 
+## Why a terminal, and why local
+
+Bedlam is for the developer who has just patched an outage, and that developer
+is already in a terminal next to Docker. The app it attacks runs on your
+machine on purpose: Bedlam sends real faults to it, and Nebius's acceptable-use
+policy forbids attack-like traffic against Nebius-hosted systems. Nebius runs
+Bedlam's brain, never its victim.
+
 ## Limits, stated up front
 
 - **Blast radius is bounded and computed before injection**, never discovered
