@@ -23,6 +23,32 @@ badges of either kind.
 
 ---
 
+## Session [2026-10-22-2250]
+
+- **Start status:** `17d76e7`, working tree clean, 201 tests. Phase 5 in
+  progress; open list from the previous session: log-scaled latency bars,
+  the empty `ReadTimeout: ` message, weak "why" evidence.
+- **End status:** `004a792` plus this entry. 206 tests, lint clean. The
+  replay recording was not re-recorded: no prompt or model-map change.
+  Next session starts with a nine-item list for shortening `bedlam/tui.py`
+  (kept in the local checkpoint). Still open in Phase 5: clean run 3 and a
+  fresh clone on another machine.
+- **Badges:**
+  - 🐛 Bug fix — the patch-held check recorded a bare "ReadTimeout: " when
+    httpx timed out with no message; the app probe now formats its error
+    like the layer probes, "no answer in 6000 ms" (`ec56e88`).
+  - 🐛 Bug fix — latency bars use a square-root scale: on the log scale
+    318 ms and 2 s drew nearly alike (15 vs 20 cells, now 8 vs 20)
+    (`72d04cc`).
+  - 🆕 Addition — `/search [N]`: one cycle's search from request to
+    routing: queries with latency and results kept, cut or cached, credits,
+    depth and site filters, Nano's layer labels, the summed scores as bars,
+    and the winning specialist (`97ff614` plan, `1c3cc24`).
+  - 🆕 Addition — `/loop`: the round's seven steps, one per row with what
+    happens at each, the current step marked, and the trade-off after
+    round 2. A ring layout was turned down for this one (`004a792`).
+  - Removed four unused Toxiproxy client methods (`0d97d68`).
+
 ## Session [2026-10-22-2210]
 
 - **Start status:** `b250165`, Phase 5 in progress. Run in parallel with
