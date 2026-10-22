@@ -12,7 +12,7 @@ import time
 
 import redis.asyncio as redis
 
-from bedlam.probes.result import DEFAULT_TIMEOUT_S, HealthStatus, ProbeResult
+from bedlam.probes.result import DEFAULT_TIMEOUT_S, HealthStatus, ProbeResult, describe
 from bedlam.topology import Layer, endpoint_for
 
 
@@ -44,5 +44,5 @@ async def probe(*, timeout_s: float = DEFAULT_TIMEOUT_S) -> ProbeResult:
             layer=Layer.CACHE,
             status=HealthStatus.DOWN,
             latency_ms=elapsed_ms,
-            error=f"{type(exc).__name__}: {exc}",
+            error=describe(exc, timeout_s),
         )

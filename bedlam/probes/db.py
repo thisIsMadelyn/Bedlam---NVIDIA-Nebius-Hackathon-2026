@@ -11,7 +11,7 @@ import time
 
 import asyncpg
 
-from bedlam.probes.result import DEFAULT_TIMEOUT_S, HealthStatus, ProbeResult
+from bedlam.probes.result import DEFAULT_TIMEOUT_S, HealthStatus, ProbeResult, describe
 from bedlam.topology import Layer, endpoint_for
 
 _USER = "postgres"
@@ -52,5 +52,5 @@ async def probe(*, timeout_s: float = DEFAULT_TIMEOUT_S) -> ProbeResult:
             layer=Layer.DB,
             status=HealthStatus.DOWN,
             latency_ms=elapsed_ms,
-            error=f"{type(exc).__name__}: {exc}",
+            error=describe(exc, timeout_s),
         )
