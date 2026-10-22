@@ -222,10 +222,12 @@ Artifacts:
   then `make test` reproduces its fault sequence
 - Replay mode as a no-key fallback — **never the default**, because a judge running
   it must see the live Tavily call
-- Onboarding line (judges' meeting, 22 Oct): one templated line on the
-  baseline screen that tells a first-time viewer what happens next, for
-  example "I'll break one layer. Patch it, then press P." No model call;
-  fits 82 columns; wording approved before it is built
+- Onboarding line (judges' meeting, 22 Oct; landed the same day): from
+  launch until the first turn, the NOW box's "You:" line says the whole
+  loop instead of "just watch": "You: watch. Two rounds of break, fix and
+  re-test, then a trade-off you pick." The baseline screen itself lasts
+  milliseconds, so the line covers round 1's lead-in instead. Templated,
+  76 columns
 - No-query abort (judges' meeting, 22 Oct): a run still stops when Nano
   returns no valid Tavily query after its retries. Decide before freeze:
   fix it, or leave it documented in `LIMITATIONS.md`

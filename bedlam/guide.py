@@ -21,6 +21,9 @@ MODELS: Final = "AI MODELS"
 STEPS: Final = 7
 
 _NOTHING: Final = "You: nothing to do. Just watch."
+# Said instead of _NOTHING until the viewer's first turn: the whole loop,
+# for someone who has never seen it.
+ONBOARDING: Final = "You: watch. Two rounds of break, fix and re-test, then a trade-off you pick."
 _VERB: Final = {
     "latency": "slowing down",
     "bandwidth": "throttling",
@@ -40,6 +43,10 @@ class Guidance:
     def nudged(self, line: str) -> Guidance:
         """The same guidance with its last line replaced."""
         return replace(self, lines=(self.lines[0], self.lines[1], line))
+
+    def onboarding(self) -> Guidance:
+        """The same guidance, saying the whole loop where it says "just watch"."""
+        return self.nudged(ONBOARDING) if self.lines[2] == _NOTHING else self
 
 
 STARTING: Final = Guidance(

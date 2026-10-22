@@ -361,7 +361,8 @@ class BedlamApp(App[int]):
         self._seen_calls = 0
         self._seen_searches = 0
         self._cycle = 0
-        self.now: Guidance = STARTING
+        self.now: Guidance = STARTING.onboarding()
+        self._onboarding = True  # until the first turn, the NOW box says the whole loop
         self._said: tuple[str, bool] | None = None
         self.mood = jester.Mood.IDLE
         self._blast: list[str] = []
@@ -943,6 +944,10 @@ class BedlamApp(App[int]):
         elif kind != "probing":
             self._run_events[kind] = fields
         self.now = guidance(kind, fields, real=self.real) or self.now
+        if self.now.your_turn:
+            self._onboarding = False
+        elif self._onboarding:
+            self.now = self.now.onboarding()
         handler = getattr(self, f"_on_{kind}", None)
         if handler is not None:
             handler(fields)

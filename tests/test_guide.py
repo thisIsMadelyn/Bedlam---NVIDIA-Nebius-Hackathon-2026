@@ -6,7 +6,7 @@ import asyncio
 from pathlib import Path
 
 from test_loop import _run_once
-from test_tui import SIZE, _app
+from test_tui import SIZE, _app, _drive
 from textual.widgets import Static
 
 from bedlam.faults.primitives import FaultKind
@@ -17,6 +17,7 @@ from bedlam.guide import (
     LOG,
     MODELS,
     NO_CHANGES,
+    ONBOARDING,
     PRESSED_REAL,
     PRESSED_SCRIPTED,
     STARTING,
@@ -39,7 +40,7 @@ def _all_guidance(tmp_path: Path) -> list:
         fields = {"layer": "cache", "kind": kind.value, "blast_radius": ["api", "cache"]}
         found.append(guidance("injecting", fields))
     found.append(guidance("selected", {"selection": {"fault": {"id": longest_fault.id}}}))
-    fixed = [STARTING, STOPPED, PRESSED_REAL, PRESSED_SCRIPTED, NO_CHANGES]
+    fixed = [STARTING, STARTING.onboarding(), STOPPED, PRESSED_REAL, PRESSED_SCRIPTED, NO_CHANGES]
     turns = [YOUR_TURN_REAL, YOUR_TURN_SCRIPTED, TRADE_OFF]
     longest_title = {"choice": "a", "option": {"title": "x" * 48}}
     found += [guidance("chosen", longest_title), guidance("finished", {"escalation": None})]
@@ -54,6 +55,29 @@ def test_every_guide_line_fits_and_points_somewhere(tmp_path: Path) -> None:
         assert you.startswith("You") or item.your_turn, f"{item.title} never says what to do"
         pointed = any(name in where for name in (APP, LOG, MODELS))
         assert pointed or item.your_turn or item.title == "DONE", f"{item.title}: look where?"
+
+
+def test_until_the_first_turn_the_now_box_says_the_whole_loop() -> None:
+    async def scenario() -> list[tuple[bool, str]]:
+        app = _app()
+        seen = [(False, app.now.lines[2])]
+        on_event = app.on_loop_event
+
+        def watch(kind, fields) -> None:
+            on_event(kind, fields)
+            seen.append((app.now.your_turn, app.now.lines[2]))
+
+        app.on_loop_event = watch  # type: ignore[method-assign]
+        async with app.run_test(size=SIZE) as pilot:
+            await _drive(app, pilot)
+        return seen
+
+    seen = asyncio.run(scenario())
+    first = next(i for i, (turn, _) in enumerate(seen) if turn)
+    before = {line for _, line in seen[:first]}
+    after = [line for turn, line in seen[first:] if not turn]
+    assert before == {ONBOARDING}, "every line before the first turn says the loop"
+    assert ONBOARDING not in after and "You: nothing to do. Just watch." in after
 
 
 def test_your_turn_is_loud_and_p_is_acknowledged() -> None:
