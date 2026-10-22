@@ -23,6 +23,34 @@ badges of either kind.
 
 ---
 
+## Session [2026-10-22-1520]
+
+- **Start status:** `8df54c9`, working tree clean. Phase 5 in progress:
+  the no-query abort undecided, no clean runs logged, no fresh clone.
+  Run in parallel with a session drafting the Devpost fields (`668130a`
+  to `f18156c`), whose commits are not part of this entry.
+- **End status:** `8b81860` plus this entry. 197 tests, lint clean. The
+  replay recording was not re-recorded: no prompt or model-map change.
+  Clean runs: 2 of 3 from a fresh `make up` (`--scripted`). Still open in
+  Phase 5: clean run 3 and a fresh clone on another machine.
+- **Badges:**
+  - 🆕 Addition — a round where Nano returns no valid Tavily query
+    searches one templated query instead of stopping the run: a seeded
+    pick of a dependency and failure term, version from the lockfile,
+    never one already searched, marked `(templated)` on screen
+    (`b2f96e4`).
+  - 🐛 Bug fix — a model outage stops the run before any search instead of
+    templating the query and failing later on the wrong call site
+    (`78990e3`). Found by a QA bug hunt on `b2f96e4`.
+  - 🐛 Bug fix — an invalid item in Nano's reply no longer discards a valid
+    query beside it (`b250165`). Found by the same hunt.
+  - 🆕 Addition — closing the terminal window reverts the scripted fixes
+    on Windows; before, they stayed applied until the next run
+    (`023708a`). Every revert is now logged, whichever path runs it
+    (`8b81860`).
+  - 🐛 Bug fix — `/zoom` with nothing zoomed says what to zoom instead of
+    doing nothing (`646899a`).
+
 ## Session [2026-10-22-1503]
 
 - **Start status:** `9f23fed`, working tree clean. Phase 5 in progress, run
