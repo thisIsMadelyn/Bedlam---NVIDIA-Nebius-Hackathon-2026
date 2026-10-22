@@ -255,6 +255,20 @@ Artifacts:
   re-break, not the break (see "Judges' meeting advice"); a screenshot of
   the cycle-2 moment at the top (`/shot`); the jester section moves below
   setup; a link to `LIMITATIONS.md` beside the stated limits
+- "Why a terminal, and why local" block (raised 22 Oct), right under the
+  pitch. Draft: "Bedlam is for the developer who has just patched an
+  outage, and that developer is already in a terminal next to Docker. The
+  app it attacks runs on your machine on purpose: Bedlam sends real faults
+  to it, and Nebius's acceptable-use policy forbids attack-like traffic
+  against Nebius-hosted systems. Nebius runs Bedlam's brain, never its
+  victim." Phase 8 reuses it word for word in the Devpost description
+- "Models and Nebius usage" leads with what Nebius does (raised 22 Oct),
+  not with a pointer to `PLAN.md`. Draft: "Every decision Bedlam makes is a
+  live call to NVIDIA Nemotron on Nebius Token Factory: seven call sites,
+  from reading probe results to building the final trade-off. Nothing is
+  pre-computed, and the AGENT panel shows each call as it happens: model,
+  tokens, latency, outcome." Never write "inference only" without first
+  saying what that inference does
 - Fix the README model table: search synthesis is temperature 0.0 in
   `map.py` and section 2, not the 0.3 the README shows
 - `LIMITATIONS.md` (created 22 Oct): kept current with every change before
