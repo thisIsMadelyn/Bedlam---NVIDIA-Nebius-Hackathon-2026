@@ -1234,7 +1234,7 @@ class BedlamApp(App[int]):
         middle = fit(f"  {where}   {step}{now.title}", full - len(header) - len(right))
         header.append(middle.ljust(full - len(header) - len(right)), style="bold")
         header.append(right, style=_SOFT)
-        self.query_one("#header", Static).update(header)
+        _show(self.query_one("#header", Static), header)
 
         box = self.query_one("#now", Static)
         box.set_class(now.your_turn, "your-turn")
@@ -1243,14 +1243,14 @@ class BedlamApp(App[int]):
             last = i == len(now.lines) - 1
             style = "bold" if i == 0 else f"bold {GO}" if last and now.your_turn else _SOFT
             body.append(fit(line, _inner(box)) + ("" if last else "\n"), style=style)
-        box.update(body)
-        self.query_one("#jester", Static).update(jester.render(self.mood, _JESTER_COLOURS))
+        _show(box, body)
+        _show(self.query_one("#jester", Static), jester.render(self.mood, _JESTER_COLOURS))
 
         says = Text.assemble((_SAYS, f"bold {_BACKGROUND} on {ACCENT}"))
         if self._said is not None:
             line, quoted = self._said
             says.append(" " + fit(line, full - 3 - len(_SAYS)), style=_voice_style(quoted))
-        self.query_one("#says", Static).update(says)
+        _show(self.query_one("#says", Static), says)
 
         keys = Text(" ")
         lit = f"bold {_BACKGROUND} on {GO}"
@@ -1266,7 +1266,7 @@ class BedlamApp(App[int]):
         keys.append(" quit    ", style=_SOFT)
         keys.append(" / ", style=f"{_TEXT} on {MUTED}")
         keys.append(" command", style=_SOFT)
-        self.query_one("#footer", Static).update(keys)
+        _show(self.query_one("#footer", Static), keys)
 
         self._render_system()
         if not self.query_one("#frame").has_class("-escalation"):
@@ -1362,7 +1362,7 @@ class BedlamApp(App[int]):
         if strip.display != fits:
             strip.display = fits
             self.call_after_refresh(self._render_chrome)
-        panel.update(body)
+        _show(panel, body)
 
     def _recap(self, width: int) -> list[Text]:
         """How you got here: one line per round, the fault and whether the
@@ -1416,7 +1416,7 @@ class BedlamApp(App[int]):
             record = f"decision record: {_shown_path(self.decision_file)}"
             body.append(fit(record, width) + "\n", style=GO)
         body.rstrip()
-        panel.update(body)
+        _show(panel, body)
 
     def _render_system(self) -> None:
         panel = self.query_one("#system", Static)
@@ -1458,7 +1458,7 @@ class BedlamApp(App[int]):
         fault = f"{self._fault} live, blast {', '.join(self._blast)}" if self._fault else "none"
         style = f"bold {DAMAGE}" if self._fault else MUTED
         system.append(fit(f"fault  {fault}", width), style=style)
-        panel.update(system)
+        _show(panel, system)
         panel.border_subtitle = self._load_note
 
     async def _poll_stats(self) -> None:
@@ -1593,6 +1593,20 @@ def _health_text(snapshot: dict[str, dict[str, Any]]) -> str:
         value = f"{latency:.0f}ms" if latency is not None else "-"
         parts.append(f"{layer} {result['status']} {value}")
     return ", ".join(parts)
+
+
+def _show(panel: Static, content: Text) -> None:
+    """Put `content` in `panel`, repainting only what changed.
+
+    A plain update lays the whole screen out again, which a terminal shows
+    as a flicker. Unchanged text is skipped; text with the same rows is
+    repainted in place.
+    """
+    old = panel.content
+    if isinstance(old, Text) and old == content:
+        return
+    same_rows = isinstance(old, Text) and old.plain.count("\n") == content.plain.count("\n")
+    panel.update(content, layout=not same_rows)
 
 
 def _inner(widget: Widget) -> int:
