@@ -34,10 +34,11 @@ class ProbeResult:
 def describe(exc: Exception, timeout_s: float) -> str:
     """A probe's error as `Type: message`, the type first for the classifier.
 
-    `asyncio.wait_for` raises a TimeoutError with no message, which would
-    show as a bare "TimeoutError:"; it says how long the probe waited instead.
+    `asyncio.wait_for` raises a TimeoutError with no message, and httpx's
+    ReadTimeout often has none either, which would show as a bare
+    "TimeoutError:"; it says how long the probe waited instead.
     """
     message = str(exc)
-    if not message and isinstance(exc, TimeoutError):
+    if not message and "Timeout" in type(exc).__name__:
         message = f"no answer in {timeout_s * 1000:.0f} ms"
     return f"{type(exc).__name__}: {message}" if message else type(exc).__name__

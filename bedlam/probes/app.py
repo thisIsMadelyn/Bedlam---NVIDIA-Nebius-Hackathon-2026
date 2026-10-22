@@ -21,6 +21,7 @@ from typing import Any, Final
 import httpx
 
 from bedlam.logging import get_logger, log_event
+from bedlam.probes.result import describe
 from bedlam.topology import Layer, endpoint_for
 
 _LOG = get_logger("bedlam.probes.app")
@@ -135,7 +136,7 @@ class AppProbe:
                 resp = await client.get(READ_PATH)
         except Exception as exc:  # noqa: BLE001 - any failure is the measurement
             elapsed_ms = (time.perf_counter() - started) * 1000
-            return AppResult(False, elapsed_ms, None, f"{type(exc).__name__}: {exc}")
+            return AppResult(False, elapsed_ms, None, describe(exc, self._timeout_s))
         elapsed_ms = (time.perf_counter() - started) * 1000
         ok = 200 <= resp.status_code < 300
         error = None if ok else f"HTTP {resp.status_code}"
