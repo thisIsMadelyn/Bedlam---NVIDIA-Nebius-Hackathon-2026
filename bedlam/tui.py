@@ -123,6 +123,8 @@ _WHY_RESULTS: Final = 3
 # The post-mortem log while the trade-off waits: it takes every row the
 # cards leave, and shows once at least 3 rows and its border are left.
 _STRIP_ROWS: Final = 5
+# A panel's border and horizontal padding, both sides.
+_PANEL_EDGES: Final = 4
 # Labels in /cycle and /cost: two spaces, the label, a space.
 _FIELD: Final = 10
 # How long the launch splash holds before the run starts. Any key skips it.
@@ -1300,11 +1302,20 @@ class BedlamApp(App[int]):
         if moved:
             self._redraw_page()
 
+    def _trade_off_width(self) -> int:
+        """Columns inside the trade-off panel. Hidden or not yet laid out it
+        measures nothing, so take them from the frame it fills: the cards
+        are then built at the width they are shown at, and never resize."""
+        panel = self.query_one("#tradeoff", Static)
+        if panel.content_region.width > 0:
+            return _inner(panel)
+        return max(self.query_one("#frame").size.width - _PANEL_EDGES, LINE)
+
     def _render_trade_off(self) -> None:
         """Both options with equal weight: two cards, same rows, same colours."""
         assert self._trade_off is not None
         panel = self.query_one("#tradeoff", Static)
-        width = _inner(panel)
+        width = self._trade_off_width()
         trade_off = self._trade_off
         body = Text()
         body.append(fit(trade_off["axis"], width) + "\n", style=f"bold {ACCENT}")
@@ -1374,7 +1385,7 @@ class BedlamApp(App[int]):
         page.display = True
         panel.border_title = "TRADE-OFF · decided, by you"
         panel.border_subtitle = ""
-        width = _inner(panel)
+        width = self._trade_off_width()
         chosen = self._run_events["chosen"]["choice"]
         body = Text()
         body.append(fit(self._trade_off["axis"], width) + "\n", style=f"bold {ACCENT}")

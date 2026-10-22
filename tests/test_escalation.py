@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 from fakes import FakeTransport, answer_tradeoff_escalation, plausible_model
 from test_loop import _run_once
-from test_tui import SIZE, _app
+from test_tui import SIZE, _app, _drive
 
 from bedlam.escalation import ScriptedChoice, decision_record, escalate
 from bedlam.faults.primitives import FaultKind
@@ -382,6 +382,31 @@ def test_while_the_choice_waits_the_recap_gives_way_to_the_field() -> None:
     assert field and not recap, "the recap would leave the replies too short for the field"
     field, recap = asyncio.run(scenario((82, 45)))
     assert field and recap, "a taller screen has room for both"
+
+
+@pytest.mark.parametrize("size", [SIZE, (120, 45)], ids=["82 minimum", "wide"])
+def test_the_cards_keep_one_width_through_the_run_and_log_switches(monkeypatch, size) -> None:
+    import bedlam.tui as tui
+
+    widths: list[int] = []
+    cards = tui.option_cards
+
+    def spy(options, width, **kwargs):
+        widths.append(width)
+        return cards(options, width, **kwargs)
+
+    monkeypatch.setattr(tui, "option_cards", spy)
+
+    async def scenario() -> None:
+        app = _app()
+        async with app.run_test(size=size) as pilot:
+            await _drive(app, pilot)
+            for command in ("log", "log", "log", "log"):
+                await pilot.press("slash", *command, "enter")
+                await pilot.pause(0.2)
+
+    asyncio.run(scenario())
+    assert set(widths) == {size[0] - 4}, "the cards were built at another width"
 
 
 def test_the_glow_lights_the_band_without_changing_its_shades() -> None:
