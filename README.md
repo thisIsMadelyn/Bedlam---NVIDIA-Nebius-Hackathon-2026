@@ -9,11 +9,11 @@ your patch did not cover. After two cycles it stops breaking things and
 escalates to a performance trade-off that you choose -- it does not choose
 for you.
 
-## Why a terminal, and why local
-
 <p align="center">
-    <img src="docs/screenshot-1.png" alt="Bedlam's first break" width="800">
+    <img src="docs/screenshot-1.png" alt="Bedlam testing a patch: a cache fault injected, the fix applied, and every Nemotron and Tavily call listed" width="800">
 </p>
+
+## Why a terminal, and why local
 
 Bedlam is for the developer who has just patched an outage, and that developer
 is already in a terminal next to Docker. The app it attacks runs on your
