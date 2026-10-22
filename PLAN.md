@@ -432,6 +432,16 @@ Also approved 21 Oct, for managing the output and layout:
 - `/sudo …` — hidden easter egg; runs nothing
 - Textual's Ctrl+P palette is off: `/` is the only command line
 
+Also approved 22 Oct, to show the mechanics under the hood:
+
+- `/search [N]` — one cycle's search from request to routing: each query
+  with its latency, results kept and cut, or cached; the credits; the
+  search depth and the allowed and excluded sites; Nano's layer labels;
+  the summed scores as bars; the winning specialist
+- `/loop` — the seven steps of a round, one per row with what happens at
+  each, the current step marked, the rounds done, and the trade-off after
+  round 2. A ring design was turned down for this vertical one
+
 Dropped: `/patched` (that's `/patch`), `/trace` (the AGENT panel shows it),
 `/moral`, `/pause`, history recall, `/time`. Constraints: read-only, built from state the TUI already holds,
 no command may make the trade-off decision on the developer's behalf
