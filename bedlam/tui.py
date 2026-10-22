@@ -538,10 +538,15 @@ class BedlamApp(App[int]):
 
     def _home(self) -> RichLog:
         """The log that holds focus between commands: the one on screen."""
-        if self._decided and self.query_one("#frame").has_class("-escalation"):
+        if self._past_choice() and self.query_one("#frame").has_class("-escalation"):
             return self.query_one("#postmortem", RichLog)
         zoomed_agent = self.query_one("#body").has_class("-zoom-agent")
         return self.query_one("#agent" if zoomed_agent else "#timeline", RichLog)
+
+    def _past_choice(self) -> bool:
+        """Whether the trade-off page shows decided: the run completed, or
+        the chosen cost is still running."""
+        return self._decided or ("chosen" in self._run_events and self.exit_code is None)
 
     def _on_page(self) -> bool:
         """Whether command replies go to the post-mortem log."""
@@ -797,7 +802,7 @@ class BedlamApp(App[int]):
 
     def _command_log(self, arg: str) -> None:
         frame = self.query_one("#frame")
-        if self._trade_off is None or not (self._decided or self.choices.waiting):
+        if self._trade_off is None or not (self._past_choice() or self.choices.waiting):
             self._say("  the run log is already on screen", style=_SOFT)
             return
         frame.toggle_class("-escalation")
@@ -1259,7 +1264,7 @@ class BedlamApp(App[int]):
         self._render_system()
         if not self.query_one("#frame").has_class("-escalation"):
             self.query_one("#postmortem").display = False
-        elif self._decided:
+        elif self._past_choice():
             self._render_decided()
         elif self._trade_off is not None:
             self._render_trade_off()
@@ -1376,7 +1381,8 @@ class BedlamApp(App[int]):
         return lines if len(lines) > 1 else []
 
     def _render_decided(self) -> None:
-        """The trade-off page once the run is over: the choice, its cost, the record."""
+        """The trade-off page once chosen: the choice, its cost, and the
+        record once the run is over."""
         assert self._trade_off is not None
         panel = self.query_one("#tradeoff", Static)
         page = self.query_one("#postmortem", RichLog)
@@ -1399,7 +1405,7 @@ class BedlamApp(App[int]):
             readings = (before, shown, self._run_events.get("cost_removed"))
             cost = f"the cost, live: {showing['fault']} · {_cost_text(showing['layer'], readings)}"
             body.append(fit(cost, width) + "\n", style=DAMAGE)
-        if self.decision_file is not None:
+        if self._decided and self.decision_file is not None:  # written as the run ends
             record = f"decision record: {_shown_path(self.decision_file)}"
             body.append(fit(record, width) + "\n", style=GO)
         body.rstrip()

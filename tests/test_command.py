@@ -372,6 +372,43 @@ def test_log_switches_between_the_page_and_the_run_log() -> None:
     asyncio.run(scenario())
 
 
+def test_log_works_while_the_chosen_cost_runs() -> None:
+    async def scenario() -> None:
+        app = _app()
+        launch, done = app._launch, asyncio.Event()
+
+        async def held(app: BedlamApp) -> int:  # the run stays open after the choice
+            code = await launch(app)
+            await done.wait()
+            return code
+
+        app._launch = held
+        async with app.run_test(size=SIZE) as pilot:
+            for _ in range(2000):
+                if app.patches.waiting:
+                    await pilot.press("p")
+                if app.choices.waiting:
+                    await pilot.press("a")
+                if "chosen" in app._run_events and not app.choices.waiting:
+                    break
+                await asyncio.sleep(0.01)
+            await pilot.pause(0.2)
+            assert app.exit_code is None and app.query_one("#timeline").display
+            await _type(pilot, "log")
+            assert _reply(app, "log") == ["  back on the trade-off page"]
+            panel = app.query_one("#tradeoff", Static)
+            assert panel.display and app.query_one("#postmortem").has_focus
+            assert panel.border_title == "TRADE-OFF · decided, by you"
+            assert "decision record" not in str(panel.render()), "not written yet"
+            await _type(pilot, "log")
+            assert app.query_one("#timeline").display and app.query_one("#timeline").has_focus
+            done.set()
+            await pilot.pause(0.3)
+            assert app.exit_code == 0 and panel.display
+
+    asyncio.run(scenario())
+
+
 def test_while_choosing_the_strip_takes_replies_when_there_is_room() -> None:
     async def scenario() -> None:
         app = _app()
