@@ -1443,8 +1443,8 @@ class BedlamApp(App[int]):
             shown = f"{latency:>8.1f} ms" if latency is not None else "      -   "
             system.append(f"{layer.value:<6} ")
             system.append(f"{result['status'].upper():<5} ", style=f"bold {GO if up else DAMAGE}")
-            hit = layer.value in self._blast
-            system.append(latency_bar(latency, size), style=DAMAGE if hit else GO)
+            # The bar follows the status beside it; the fault row names the blast.
+            system.append(latency_bar(latency, size), style=GO if up else DAMAGE)
             system.append(f" {shown}")
             used = 6 + 1 + 6 + size + 1 + len(shown)
             load = self._load_text(layer)
