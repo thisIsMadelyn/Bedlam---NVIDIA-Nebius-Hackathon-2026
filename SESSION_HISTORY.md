@@ -29,10 +29,11 @@ badges of either kind.
   in parallel with session 2026-10-22-1315. Phase 7 (video) had its rules
   but no format, introduction, outline or script.
 - **End status:** `a03731a` plus this entry. Documentation only, no code
-  change. A report that real patch mode stayed on "press p when it is
-  saved" was looked into and set aside unfixed: the likely cause is edits
-  already saved in the target before the run starts, which the start
-  snapshot absorbs. Still open: the script's take-dependent brackets, filled
+  change. A report that the run stayed on "press p when it is saved" was
+  caused by the launch mode, not the code: the TUI was started in real
+  patch mode instead of `--scripted`, with the target's edits saved before
+  the run began, so P found no new changes. Still open: the script's
+  take-dependent brackets, filled
   in when the video is recorded on Wed 28 Oct.
 - **Badges:**
   - 🆕 Addition — Phase 7 plan: screen recording with a voice-over recorded
