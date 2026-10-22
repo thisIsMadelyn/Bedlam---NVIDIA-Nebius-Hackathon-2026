@@ -222,6 +222,13 @@ Artifacts:
   then `make test` reproduces its fault sequence
 - Replay mode as a no-key fallback — **never the default**, because a judge running
   it must see the live Tavily call
+- Onboarding line (judges' meeting, 22 Oct): one templated line on the
+  baseline screen that tells a first-time viewer what happens next, for
+  example "I'll break one layer. Patch it, then press P." No model call;
+  fits 82 columns; wording approved before it is built
+- No-query abort (judges' meeting, 22 Oct): a run still stops when Nano
+  returns no valid Tavily query after its retries. Decide before freeze:
+  fix it, or leave it documented in `LIMITATIONS.md`
 
 Done when:
 - [ ] Three clean runs in a row, no manual intervention
@@ -239,6 +246,14 @@ Artifacts:
 - `model_map` documented with the reasoning for each assignment
 - Architecture notes: why sequential faults, why Tavily over structured vulnerability
   databases, why Super over Ultra
+- README restructure (judges' meeting, 22 Oct): the pitch leads with the
+  re-break, not the break (see "Judges' meeting advice"); a screenshot of
+  the cycle-2 moment at the top (`/shot`); the jester section moves below
+  setup; a link to `LIMITATIONS.md` beside the stated limits
+- Fix the README model table: search synthesis is temperature 0.0 in
+  `map.py` and section 2, not the 0.3 the README shows
+- `LIMITATIONS.md` (created 22 Oct): kept current with every change before
+  content freeze, so it matches the shipped build
 - Developer manual (raised 21 Oct): for the developer running the app. The
   loop step by step (fault, symptom, your turn, restart, same fault, verdict,
   analysis, trade-off), scripted vs real patch mode, every key and slash
@@ -256,6 +271,11 @@ Done when:
 
 Artifacts:
 - Script, under 2:40 to leave margin
+- Cold open (judges' meeting, 22 Oct): the first 10–15 seconds show the
+  cycle-2 re-break ("your patch held, but it did not cover X"), then the
+  video goes back to the start. The aha lands inside 30 seconds
+- On screen: the loop, the trade-off and `/why` only. The other commands,
+  the post-mortem page and the jester's moods are left to the manual
 - Screen recording showing the project actually running
 - The live Tavily call visible on screen
 - Uploaded **public** to YouTube, not unlisted
@@ -273,7 +293,9 @@ Done when:
 Do not leave this for the 30th.
 
 - [ ] Devpost: track = Coding and Agentic Engineering
-- [ ] Project description, named target user in the first line
+- [ ] Project description, named target user in the first line, using the
+  re-break pitch from the README
+- [ ] Limitations from `LIMITATIONS.md` summarised in the description, with a link
 - [ ] Separate field: NVIDIA models / Token Factory / Nebius tools usage
 - [ ] Demo URL: repo link plus "test build — `docker compose up`, see README"
 - [ ] Video URL
@@ -425,6 +447,31 @@ phase before work starts.
   patch mode stays for the builder, and may be used for the video.
 - **Video length is not a risk.** The loop finishes in seconds; 3:00 is
   ample.
+
+### Judges' meeting advice
+
+Recorded 22 Oct from the judges' meeting (Nebius, Tavily, NVIDIA). Each
+item is scheduled into its phase above.
+
+- **Real problem, real audience.** No developers are available to interview
+  before freeze, so the change is to the pitch, not the features. The pitch
+  leads with what no plain chaos tool does: Bedlam runs your patch, says
+  whether it held, and breaks the system again where the patch did not
+  reach. Draft, to settle in Phase 6: "Bedlam breaks your app, runs your
+  fix, and then breaks it again where your fix didn't reach."
+- **Aha fast.** The first break lands within about 15 seconds of a run
+  starting; the aha is the cycle-2 re-break. Phase 6 puts it at the top of
+  the README and Phase 7 opens the video on it.
+- **One thing done well.** Every integration already supports the loop. No
+  new features before freeze beyond what is already approved; the video
+  shows the loop, the trade-off and `/why`.
+- **Action first, onboarding, which model.** Model attribution is already
+  on screen (AGENT panel). Phase 5 adds one onboarding line on the
+  baseline screen.
+- **Publish limitations.** Documented failure cases live in
+  `LIMITATIONS.md`, separate from the design guarantees in the README.
+- No accessibility claim: Bedlam was not built for it, so the submission
+  says nothing about it.
 
 ### Trade-off page redesign
 
