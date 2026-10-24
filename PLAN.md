@@ -236,7 +236,7 @@ Artifacts:
   and routing stay live. The timeline marks it `(templated)`
 
 Done when:
-- [ ] Three clean runs in a row, no manual intervention
+- [x] Three clean runs in a row, no manual intervention
 - [ ] A fresh clone on a different machine reproduces the run from README alone
 
 ---
