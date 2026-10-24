@@ -299,7 +299,7 @@ Artifacts:
 
 Done when:
 - [ ] A stranger can run the project from the README with no other input
-- [ ] The NVIDIA/Nebius usage section is standalone and could be pasted into Devpost
+- [x] The NVIDIA/Nebius usage section is standalone and could be pasted into Devpost
 
 ---
 
