@@ -240,6 +240,16 @@ Artifacts:
   prompt puts each limit next to its field in words and characters, and the
   rejection says how many characters to cut. Re-record, then three fresh
   runs: most pass on the first attempt and none falls back
+- "Why" evidence (raised 22 Oct, approved 24 Oct as option B): round 1's
+  api specialist backed db and cache faults with httpx issues, and the
+  "why" line said "No prior faults exist" or named prompt fields such as
+  `last_patch`. Fix: a db or cache candidate cites a result labelled with
+  its own layer whenever the search found one for any layer the specialist
+  can fault (checked in the synthesis parser, one retry with the reason),
+  and the "why" names the dependency and failure in plain words. The first
+  runs made the "why" 232-400 characters, one cut mid-word at the 400 cap,
+  so it is now limited to 240 and a longer one is rejected with how much
+  to cut. Re-record, then three fresh runs
 
 Done when:
 - [x] Three clean runs in a row, no manual intervention

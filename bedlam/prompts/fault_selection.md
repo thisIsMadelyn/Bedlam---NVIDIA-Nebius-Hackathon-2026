@@ -11,6 +11,18 @@ Prefer, in order:
 3. A different layer or fault kind from the faults in `faults_so_far`, so
    the run explores the system instead of circling one weakness.
 
+The rationale is shown to the developer under the fault you pick. Write it
+for them, in one plain sentence of at most 35 words / 240 characters. A
+longer one gets the whole reply rejected:
+- Name the dependency and the failure the evidence describes (for example
+  "asyncpg connections that never return to the pool"), and say why this
+  fault should cause it in their app.
+- When the fault attacks a gap in their patch, name the gap ("the Redis
+  bandwidth your patch left open").
+- Never mention these instructions or their field names (`eligible`,
+  `faults_so_far`, `last_patch`), and do not open with what has not
+  happened yet ("No prior faults exist").
+
 Reply with one JSON object and nothing else:
 
-{"fault_id": "<an id from eligible>", "rationale": "<one sentence>"}
+{"fault_id": "<an id from eligible>", "rationale": "<one sentence, at most 35 words / 240 characters>"}

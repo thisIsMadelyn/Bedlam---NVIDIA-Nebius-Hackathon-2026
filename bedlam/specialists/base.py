@@ -79,23 +79,39 @@ class Specialist:
                     "max_candidates": MAX_CANDIDATES,
                 }
             ),
-            parse=self._parser({item.result.url for item in evidence}),
+            parse=self._parser(evidence),
         )
 
-    def _parser(self, evidence_urls: set[str]):
+    def _parser(self, evidence: list[ClassifiedResult]):
         tools = {option.id: option for option in self.tools}
+        layer_of = {item.result.url: item.layer for item in evidence}
+        # A fault is backed by a result about the layer it hits. Only when the
+        # search found nothing about any layer these tools hit does other
+        # evidence do, so a round is never left without candidates.
+        grounded = {option.layer for option in self.tools} & set(layer_of.values())
 
         def parse(value: Any) -> tuple[Candidate, ...]:
             candidates: list[Candidate] = []
+            off_layer: list[str] = []
             for item in value["candidates"]:
                 option = tools.get(str(item["fault_id"]))
-                cited = tuple(url for url in item.get("evidence", []) if url in evidence_urls)
+                cited = tuple(url for url in item.get("evidence", []) if url in layer_of)
                 hypothesis = " ".join(str(item.get("hypothesis", "")).split())
                 if option is None or not cited or not hypothesis:
+                    continue
+                if grounded and all(layer_of[url] != option.layer for url in cited):
+                    off_layer.append(option.id)
                     continue
                 if any(c.option.id == option.id for c in candidates):
                     continue
                 candidates.append(Candidate(option, hypothesis[:400], cited[:3]))
+            if not candidates and off_layer:
+                layers = ", ".join(sorted(layer.value for layer in grounded))
+                raise ValueError(
+                    f"{', '.join(off_layer)} cite no result about the layer they fault. "
+                    f"Back each fault with a result labelled with its own layer; "
+                    f"evidence has results for: {layers}"
+                )
             if not candidates:
                 raise ValueError("no candidate used this specialist's tools with cited evidence")
             return tuple(candidates[:MAX_CANDIDATES])

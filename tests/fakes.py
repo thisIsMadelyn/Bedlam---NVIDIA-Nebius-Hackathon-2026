@@ -91,13 +91,18 @@ def answer_layer_classification(ctx: dict[str, Any], _model: str) -> Any:
 
 def answer_synthesis(ctx: dict[str, Any], _model: str) -> Any:
     done = {f["fault_id"] for f in ctx["faults_so_far"]}
-    url = ctx["evidence"][0]["url"]
+
+    def backing(layer: str) -> str:
+        # Like a compliant model: a result about the fault's own layer first.
+        own = [e["url"] for e in ctx["evidence"] if e["layer"] == layer]
+        return own[0] if own else ctx["evidence"][0]["url"]
+
     return {
         "candidates": [
             {
                 "fault_id": tool["id"],
                 "hypothesis": f"evidence suggests {tool['id']}",
-                "evidence": [url],
+                "evidence": [backing(tool["layer"])],
             }
             for tool in ctx["tools"]
             if tool["id"] not in done

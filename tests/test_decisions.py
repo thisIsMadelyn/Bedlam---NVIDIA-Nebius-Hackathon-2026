@@ -13,8 +13,10 @@ from bedlam.faults.primitives import FaultKind
 from bedlam.history import FaultRecord
 from bedlam.models.client import ModelCallError, ModelClient
 from bedlam.models.map import CALL_SITES, CallSite, spec_for
+from bedlam.router import ClassifiedResult
 from bedlam.search.manifest import load_manifest, lookup
 from bedlam.search.query import formulate
+from bedlam.search.tavily import SearchResult
 from bedlam.select import select_fault
 from bedlam.specialists import CATALOG, SPECIALISTS, Candidate, option
 from bedlam.topology import Layer
@@ -201,6 +203,48 @@ def test_each_layer_has_exactly_one_specialist_with_tools() -> None:
     assert {o.kind for o in SPECIALISTS[Layer.API].tools} == {FaultKind.LATENCY, FaultKind.TIMEOUT}
 
 
+_POOL = "https://github.com/MagicStack/asyncpg/issues/385"
+_HTTPX = "https://github.com/encode/httpx/discussions/2556"
+
+
+def _synthesize(evidence: list[tuple[str, Layer]], answers: list[list[str]]):
+    """Run the api specialist's synthesis; each answer cites URLs for db.timeout.0."""
+    classified = [
+        ClassifiedResult(SearchResult("q", url, "t", "snippet", 0.9), layer)
+        for url, layer in evidence
+    ]
+    replies = iter(answers)
+
+    def answer(_ctx, _model):
+        cited = next(replies)
+        return {"candidates": [{"fault_id": "db.timeout.0", "hypothesis": "h", "evidence": cited}]}
+
+    transport = FakeTransport({CallSite.TAVILY_SYNTHESIS: answer})
+    client = ModelClient(transport, root_seed=1, backoff_s=0)
+    candidates = asyncio.run(
+        SPECIALISTS[Layer.API].synthesize(
+            client, classified=classified, symptom=None, analysis=None, history=[]
+        )
+    )
+    return candidates, transport
+
+
+def test_a_db_fault_backed_only_by_api_evidence_is_retried_with_the_reason() -> None:
+    candidates, transport = _synthesize(
+        [(_HTTPX, Layer.API), (_POOL, Layer.DB)], answers=[[_HTTPX], [_POOL, _HTTPX]]
+    )
+    assert [c.evidence for c in candidates] == [(_POOL, _HTTPX)]
+    retry = transport.messages[1][-1]["content"]
+    assert "db.timeout.0 cite no result about the layer they fault" in retry
+    assert "evidence has results for: db" in retry
+
+
+def test_api_evidence_alone_still_backs_a_fault_when_no_layer_it_hits_was_found() -> None:
+    candidates, transport = _synthesize([(_HTTPX, Layer.API)], answers=[[_HTTPX]])
+    assert [c.evidence for c in candidates] == [(_HTTPX,)]
+    assert len(transport.calls) == 1
+
+
 # --- selection constraints --------------------------------------------------
 
 
@@ -254,3 +298,26 @@ def test_unusable_model_answer_falls_back_to_a_seeded_draw() -> None:
     again = _select(ids, seed=42)
     assert first.source == "seeded_fallback"
     assert first.option.id == again.option.id
+
+
+def test_a_rationale_too_long_for_the_screen_is_retried_with_how_much_to_cut() -> None:
+    ids = ["cache.latency.300", "cache.bandwidth.1"]
+    answers = iter(
+        [
+            {"fault_id": "cache.bandwidth.1", "rationale": "x" * 250},
+            {"fault_id": "cache.bandwidth.1", "rationale": "redis bandwidth your patch left open"},
+        ]
+    )
+    transport = FakeTransport({CallSite.FAULT_SELECTION: lambda _c, _m: next(answers)})
+    picked = asyncio.run(
+        select_fault(
+            ModelClient(transport, root_seed=1, backoff_s=0),
+            candidates=tuple(Candidate(option(i), "h", ("https://x",)) for i in ids),
+            specialist=SPECIALISTS[Layer.CACHE],
+            history=[],
+            analysis=None,
+            rng=random.Random(0),
+        )
+    )
+    assert (picked.source, picked.rationale) == ("model", "redis bandwidth your patch left open")
+    assert "Cut at least 10 characters." in transport.messages[1][-1]["content"]

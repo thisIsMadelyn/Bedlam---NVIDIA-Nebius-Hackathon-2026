@@ -32,6 +32,9 @@ from bedlam.specialists.catalog import FaultOption
 _LOG = get_logger("bedlam.select")
 
 DEFAULT_MAX_BLAST_RADIUS: Final = 2
+# The rationale is the "why:" line under the picked fault: about three
+# lines of the timeline at 82 columns.
+_MAX_RATIONALE: Final = 240
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,7 +79,13 @@ def _parser(pool: dict[str, Any]):
         fault_id = str(value["fault_id"])
         if fault_id not in pool:
             raise ValueError(f"{fault_id!r} is not an eligible fault")
-        return fault_id, " ".join(str(value.get("rationale", "")).split())[:400]
+        rationale = " ".join(str(value.get("rationale", "")).split())
+        if len(rationale) > _MAX_RATIONALE:
+            raise ValueError(
+                f"rationale is {len(rationale)} characters; the screen allows {_MAX_RATIONALE}. "
+                f"Cut at least {len(rationale) - _MAX_RATIONALE} characters."
+            )
+        return fault_id, rationale
 
     return parse
 

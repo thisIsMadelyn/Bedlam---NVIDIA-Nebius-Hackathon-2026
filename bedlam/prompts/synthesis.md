@@ -14,6 +14,13 @@ Rules:
   inject anything else.
 - Each candidate cites at least one `url` from `evidence` that supports it.
   Cite only URLs that appear in `evidence`.
+- Back a fault with evidence about the layer it hits. Each result has a
+  `layer`: a `db` fault cites at least one `db` result (asyncpg, SQLAlchemy,
+  Postgres), a `cache` fault at least one `cache` result (redis-py, Redis).
+  Results about the request path (`api`) may be cited as well, to explain
+  why the app fails, but never alone while a result about the fault's own
+  layer is in `evidence`. If there is no result about a tool's layer,
+  propose the tools whose layer has evidence instead.
 - The hypothesis says, in one or two sentences, what the evidence shows and
   why this fault should reproduce it in this service. Name the dependency.
 - When `last_patch` is present, prefer faults that hit its `gaps` and avoid
