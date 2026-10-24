@@ -23,6 +23,43 @@ badges of either kind.
 
 ---
 
+## Session [2026-10-24-2206]
+
+- **Start status:** `9a5a1b0`, working tree clean, 206 tests. Phase 5 in
+  progress, Devpost form text drafted except the Phase 8 items. Open list:
+  the nine-item `bedlam/tui.py` clean-up, weak "why" evidence, clean run 3
+  and a fresh clone on another machine. The README setup stopped at
+  `make smoke`.
+- **End status:** `b07e545` plus this entry. 209 tests, lint clean. The
+  replay recording was re-recorded twice, for the trade-off and the "why"
+  prompt changes. Phase 5's three clean runs are ticked; the fresh clone on
+  another machine is still open. Phase 8 is ticked except the video URL.
+  `tui.py` items 1-7 are done, 8 and 9 are left.
+- **Badges:**
+  - 🆕 Addition — README setup runs from `git clone --recurse-submodules`
+    through `make up` to `make run SCRIPTED=1`, and says what P does in
+    scripted and real patch mode. `make run` takes `SCRIPTED=1`
+    (`7752020`).
+  - 🐛 Bug fix — the trade-off's first reply broke a screen length limit in
+    every one of three clean runs, and one run fell back to the templated
+    trade-off. The prompt puts each limit next to its field and a rejection
+    says how many characters to cut. Three fresh runs after: first reply
+    accepted 3 of 3 (`23ef4b5`).
+  - 🐛 Bug fix — round 1 backed db and cache faults with httpx issues, and
+    the "why" line said "No prior faults exist" or named prompt fields like
+    `last_patch`. A db or cache candidate must now cite a result about its
+    own layer (checked in the synthesis parser, one retry with the reason),
+    and the "why" names the dependency and failure in at most 240
+    characters instead of being cut at 400. Round 1 now opens on
+    `db.timeout.0`, backed by asyncpg pool issues (`ff20106`).
+  - `tui.py` clean-up, no change on screen: `fit` replaces its copy
+    `_clip`, and `_snapshot`, `_hold_fault`, `_rule`, `_say_wrapped`,
+    `_defended` and `_reply` replace repeated code (`9479f2e` to
+    `ed27dbf`, `b07e545`).
+  - README screenshot replaced (`e4cf6db`) and README status updated
+    (`bdccfc5`). PLAN ticks: Phase 8 items (`466e234`), Phase 5 clean runs
+    (`b130f40`).
+
 ## Session [2026-10-22-2250]
 
 - **Start status:** `17d76e7`, working tree clean, 201 tests. Phase 5 in
