@@ -189,6 +189,11 @@ def _query_label(query: dict[str, Any]) -> str:
     return query["text"] + ("  (templated)" if query.get("templated") else "")
 
 
+def _defended(analysis: dict[str, Any]) -> str:
+    """What a patch defends, as `layer/kind` pairs; empty when nothing."""
+    return ", ".join(f"{d['layer']}/{d['kind']}" for d in analysis["defended"])
+
+
 class GatedPatchSource:
     """Holds the patch back until the developer says it is in.
 
@@ -784,7 +789,7 @@ class BedlamApp(App[int]):
         if analysis is None:
             self._say("  still reading it", style=_SOFT)
             return
-        defended = ", ".join(f"{d['layer']}/{d['kind']}" for d in analysis["defended"])
+        defended = _defended(analysis)
         self._say(f"  defends: {defended or 'none'}", style=_SOFT)
         gaps = "; ".join(analysis["gaps"]) or "none found"
         for line in wrap(f"gaps: {gaps}", indent=6, width=self._reply_width() - 2):
@@ -813,7 +818,7 @@ class BedlamApp(App[int]):
             analysis = steps.get("analysed", {}).get("analysis")
             read = "patch not read yet"
             if analysis is not None:
-                defended = ", ".join(f"{d['layer']}/{d['kind']}" for d in analysis["defended"])
+                defended = _defended(analysis)
                 read = f"defends {defended or 'nothing'} · {len(analysis['gaps'])} gaps"
             self._say(f"  c{cycle}  {fault} · {seen} → {read}", style=_SOFT)
         if self._trade_off is not None:
@@ -868,7 +873,7 @@ class BedlamApp(App[int]):
             self._field("after", _health_text(steps["fault_removed"]["snapshot"]))
         if "analysed" in steps:
             analysis = steps["analysed"]["analysis"]
-            defended = ", ".join(f"{d['layer']}/{d['kind']}" for d in analysis["defended"])
+            defended = _defended(analysis)
             self._field("defends", defended or "nothing")
             self._field("gaps", "; ".join(analysis["gaps"]) or "none found")
 
@@ -1160,7 +1165,7 @@ class BedlamApp(App[int]):
 
     def _on_analysed(self, fields: dict[str, Any]) -> None:
         analysis = self._analysis = fields["analysis"]
-        defended = ", ".join(f"{d['layer']}/{d['kind']}" for d in analysis["defended"]) or "none"
+        defended = _defended(analysis) or "none"
         self._say(f"patch defends: {defended}")
         if analysis["gaps"]:
             gaps = "gaps: " + "; ".join(analysis["gaps"])
