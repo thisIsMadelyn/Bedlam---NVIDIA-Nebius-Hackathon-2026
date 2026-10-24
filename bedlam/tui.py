@@ -1119,8 +1119,7 @@ class BedlamApp(App[int]):
                 self._say(line, style=_SOFT)
 
     def _on_injecting(self, fields: dict[str, Any]) -> None:
-        self._fault, self._blast = fields["fault"], fields["blast_radius"]
-        blast = ", ".join(self._blast)
+        blast = self._hold_fault(fields)
         self._say(f"injecting {self._fault}, blast radius {blast}", style=f"bold {DAMAGE}")
 
     def _on_probed(self, fields: dict[str, Any]) -> None:
@@ -1150,7 +1149,7 @@ class BedlamApp(App[int]):
         self._say("fault out. your app restarts with the patch")
 
     def _on_retesting(self, fields: dict[str, Any]) -> None:
-        self._fault, self._blast = fields["fault"], fields["blast_radius"]
+        self._hold_fault(fields)
         self._say(f"same fault again: {self._fault}, against your patch", style=f"bold {DAMAGE}")
 
     def _on_patch_checked(self, fields: dict[str, Any]) -> None:
@@ -1193,9 +1192,13 @@ class BedlamApp(App[int]):
         self._say(text, style=f"bold {GO}")
 
     def _on_showing_cost(self, fields: dict[str, Any]) -> None:
-        self._fault, self._blast = fields["fault"], fields["blast_radius"]
-        blast = ", ".join(self._blast)
+        blast = self._hold_fault(fields)
         self._say(f"showing the cost: {self._fault}, blast radius {blast}", style=f"bold {DAMAGE}")
+
+    def _hold_fault(self, fields: dict[str, Any]) -> str:
+        """Hold the live fault for the panels; returns its blast radius, joined."""
+        self._fault, self._blast = fields["fault"], fields["blast_radius"]
+        return ", ".join(self._blast)
 
     def _on_cost_shown(self, fields: dict[str, Any]) -> None:
         self._snapshot(fields, "under the cost", DAMAGE)
