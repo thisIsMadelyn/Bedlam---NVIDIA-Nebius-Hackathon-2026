@@ -1099,8 +1099,7 @@ class BedlamApp(App[int]):
         self._snapshot(fields, "baseline", GO)
 
     def _on_cycle_started(self, fields: dict[str, Any]) -> None:
-        rule = f"── cycle {fields['cycle']} of {MAX_CYCLES} "
-        self._say(rule + "─" * (self._say_width() - len(rule)), style=f"bold {ACCENT}")
+        self._rule(f"── cycle {fields['cycle']} of {MAX_CYCLES} ")
 
     def _on_searching(self, fields: dict[str, Any]) -> None:
         for query in fields["queries"]:
@@ -1174,8 +1173,7 @@ class BedlamApp(App[int]):
 
     def _on_escalating(self, fields: dict[str, Any]) -> None:
         self._escalated = True
-        rule = "── trade-off "
-        self._say(rule + "─" * (self._say_width() - len(rule)), style=f"bold {ACCENT}")
+        self._rule("── trade-off ")
 
     def _on_trade_off(self, fields: dict[str, Any]) -> None:
         self._trade_off = fields["trade_off"]
@@ -1194,6 +1192,10 @@ class BedlamApp(App[int]):
     def _on_showing_cost(self, fields: dict[str, Any]) -> None:
         blast = self._hold_fault(fields)
         self._say(f"showing the cost: {self._fault}, blast radius {blast}", style=f"bold {DAMAGE}")
+
+    def _rule(self, text: str) -> None:
+        """A section rule across the timeline: `text` then dashes to the edge."""
+        self._say(text + "─" * (self._say_width() - len(text)), style=f"bold {ACCENT}")
 
     def _hold_fault(self, fields: dict[str, Any]) -> str:
         """Hold the live fault for the panels; returns its blast radius, joined."""
