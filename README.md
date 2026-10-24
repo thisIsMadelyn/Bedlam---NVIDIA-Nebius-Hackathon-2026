@@ -10,7 +10,7 @@ escalates to a performance trade-off that you choose -- it does not choose
 for you.
 
 <p align="center">
-    <img src="docs/screenshot-1.png" alt="Bedlam testing a patch: a cache fault injected, the fix applied, and every Nemotron and Tavily call listed" width="800">
+    <img src="docs/correct-screenshot.png" alt="Bedlam testing a patch: a cache fault injected, the fix applied, and every Nemotron and Tavily call listed" width="800">
 </p>
 
 ## Why a terminal, and why local
