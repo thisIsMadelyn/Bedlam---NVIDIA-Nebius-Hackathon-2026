@@ -23,18 +23,24 @@ Rules:
   Match it to the cost, not to the gain: "fail fast" pays when a dependency
   is merely `slow`, "wait it out" pays when it `hangs`, "retry" pays when it
   `drops connections` over and over. The two options must not name the same pair.
-- Plain words for a developer, no jargon beyond the dependency names. Stay
-  within `limits` (characters).
+- Plain words for a developer, no jargon beyond the dependency names.
+- Stay within `limits` (characters), shown again next to each field below.
+  Count before you reply: one field over its limit gets the whole reply
+  rejected. Short is better than complete.
 
 Reply with one JSON object and nothing else:
 
 {
-  "axis": "<the two things in tension, e.g. 'fail fast vs wait it out'>",
-  "why": "<why this run leads here, citing what broke and what the patches did>",
+  "axis": "<the two things in tension, e.g. 'fail fast vs wait it out'; at most 8 words / 60 characters>",
+  "why": "<why this run leads here, citing what broke and what the patches did; 1-2 short sentences, at most 30 words / 220 characters>",
   "options": [
-    {"title": "<short name>", "gain": "<what you get>", "cost": "<what you give up>",
+    {"title": "<short name; 2-4 words, at most 48 characters>",
+     "gain": "<what you get; one short clause, at most 15 words / 120 characters>",
+     "cost": "<what you give up; one short clause, at most 15 words / 120 characters>",
      "cost_layer": "<one of cost_layers>", "cost_felt_when": "<a key of felt_when>"},
-    {"title": "<short name>", "gain": "<what you get>", "cost": "<what you give up>",
+    {"title": "<short name; 2-4 words, at most 48 characters>",
+     "gain": "<what you get; one short clause, at most 15 words / 120 characters>",
+     "cost": "<what you give up; one short clause, at most 15 words / 120 characters>",
      "cost_layer": "<one of cost_layers>", "cost_felt_when": "<a key of felt_when>"}
   ]
 }

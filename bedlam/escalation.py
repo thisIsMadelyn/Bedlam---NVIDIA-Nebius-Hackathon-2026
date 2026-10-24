@@ -154,7 +154,10 @@ def _text(value: Any, field: str, limit: int) -> str:
     if not text:
         raise ValueError(f"{field} is empty")
     if len(text) > limit:
-        raise ValueError(f"{field} is {len(text)} characters; the screen allows {limit}")
+        raise ValueError(
+            f"{field} is {len(text)} characters; the screen allows {limit}. "
+            f"Cut at least {len(text) - limit} characters."
+        )
     if match := _RECOMMENDS.search(text):
         raise ValueError(
             f"{field} says {match.group(0)!r}: that recommends a side. "

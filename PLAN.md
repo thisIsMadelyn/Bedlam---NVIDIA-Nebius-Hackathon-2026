@@ -234,6 +234,12 @@ Artifacts:
   (dependency, failure term) pairs in `bedlam/search/query.py`, version
   from the lockfile, never one already searched. No model call; the search
   and routing stay live. The timeline marks it `(templated)`
+- Trade-off length (rehearsal, 24 Oct): in three clean runs the trade-off's
+  first reply broke a screen limit every time, and run 1 used up all four
+  attempts and fell back to the templated trade-off. Fix (option B): the
+  prompt puts each limit next to its field in words and characters, and the
+  rejection says how many characters to cut. Re-record, then three fresh
+  runs: most pass on the first attempt and none falls back
 
 Done when:
 - [x] Three clean runs in a row, no manual intervention
