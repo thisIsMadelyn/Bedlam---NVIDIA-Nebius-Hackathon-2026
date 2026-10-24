@@ -340,15 +340,15 @@ Done when:
 
 Do not leave this for the 30th.
 
-- [ ] Devpost: track = Coding and Agentic Engineering
-- [ ] Project description, named target user in the first line, using the
+- [x] Devpost: track = Coding and Agentic Engineering
+- [x] Project description, named target user in the first line, using the
   re-break pitch from the README
-- [ ] Limitations from `LIMITATIONS.md` summarised in the description, with a link
-- [ ] Separate field: NVIDIA models / Token Factory / Nebius tools usage
-- [ ] Demo URL: repo link plus "test build — `docker compose up`, see README"
+- [x] Limitations from `LIMITATIONS.md` summarised in the description, with a link
+- [x] Separate field: NVIDIA models / Token Factory / Nebius tools usage
+- [x] Demo URL: repo link plus "test build — `docker compose up`, see README"
 - [ ] Video URL
-- [ ] Feedback field completed seriously
-- [ ] Repo public, LICENSE badge visible in About
+- [x] Feedback field completed seriously
+- [x] Repo public, LICENSE badge visible in About
 
 ---
 
