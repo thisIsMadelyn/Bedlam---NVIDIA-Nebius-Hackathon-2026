@@ -1,7 +1,7 @@
 # Bedlam
 
-An adversarial chaos agent for developers inheriting a codebase they did not
-write and do not yet know the fragile parts of.
+An adversarial chaos agent for backend developers who fix an outage and ship
+the patch hoping it holds.
 
 Bedlam breaks a running three-tier FastAPI system, waits for you to patch it,
 reads what your patch actually changed, and breaks it again from a direction
