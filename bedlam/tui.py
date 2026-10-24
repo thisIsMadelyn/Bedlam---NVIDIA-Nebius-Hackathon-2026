@@ -608,7 +608,7 @@ class BedlamApp(App[int]):
             elif name in COMMANDS:
                 getattr(self, f"_command_{name}")(arg)
             else:
-                self._say(f"unknown command /{name}. /help lists them", style=_SOFT)
+                self._reply(f"unknown command /{name}. /help lists them")
         finally:
             self._replying = None
         if name != "copy":
@@ -616,7 +616,7 @@ class BedlamApp(App[int]):
 
     def _command_help(self, arg: str) -> None:
         for name, about in COMMANDS.items():
-            self._say(f"  /{name:<8} {about}", style=_SOFT)
+            self._reply(f"  /{name:<8} {about}")
 
     def _command_status(self, arg: str) -> None:
         if self.exit_code is not None:
@@ -633,25 +633,25 @@ class BedlamApp(App[int]):
             where += " · waiting for your choice: A or B"
         elif self.exit_code is None:
             where += " · Bedlam is working"
-        self._say(f"  {where}", style=_SOFT)
+        self._reply(f"  {where}")
         if self._fault:
             blast = ", ".join(self._blast)
-            self._say(f"  live fault: {self._fault} · blast radius: {blast}", style=_SOFT)
+            self._reply(f"  live fault: {self._fault} · blast radius: {blast}")
         else:
-            self._say("  no fault live", style=_SOFT)
+            self._reply("  no fault live")
 
     def _cycle_arg(self, arg: str, command: str) -> int | None:
         """The cycle `arg` names, or the latest; says why when there is none."""
         seen = sorted(self._cycles)
         if not seen:
-            self._say("  no cycle has started yet", style=_SOFT)
+            self._reply("  no cycle has started yet")
             return None
         if not arg:
             return seen[-1]
         if arg.isdigit() and int(arg) in self._cycles:
             return int(arg)
         named = " or ".join(f"/{command} {n}" for n in seen)
-        self._say(f"  no cycle {arg} in this run. try {named}", style=_SOFT)
+        self._reply(f"  no cycle {arg} in this run. try {named}")
         return None
 
     def _command_why(self, arg: str) -> None:
@@ -662,24 +662,24 @@ class BedlamApp(App[int]):
                 return
             routed = self._cycles[cycle].get("routed")
         if routed is None:
-            self._say("  nothing routed yet. /why works once Bedlam has searched", style=_SOFT)
+            self._reply("  nothing routed yet. /why works once Bedlam has searched")
             return
         routing = routed["routing"]
         weights = " · ".join(f"{k} {v:.2f}" for k, v in routing["weights"].items())
         head = f"  routed to {routed['specialist']} ({routing['basis']})"
-        self._say(f"{head}: {weights}" if weights else head, style=_SOFT)
+        self._reply(f"{head}: {weights}" if weights else head)
         if routing["basis"] == "symptom":
-            self._say("  no result named a layer, so the symptom's layer decided", style=_SOFT)
+            self._reply("  no result named a layer, so the symptom's layer decided")
         elif routing["basis"] == "seeded":
-            self._say("  nothing named a layer, so the root seed decided", style=_SOFT)
+            self._reply("  nothing named a layer, so the root seed decided")
         named = [r for r in routed["results"] if r["layer"]]
         if not named:
             return
-        self._say("  results behind it, strongest first:", style=_SOFT)
+        self._reply("  results behind it, strongest first:")
         for result in sorted(named, key=lambda r: -r["score"])[: None if arg else _WHY_RESULTS]:
             where = re.sub(r"^https?://(www\.)?", "", result["url"])
             text = f"    {result['layer']:<5} {result['score']:.2f}  {where}  {result['title']}"
-            self._say(text, style=_SOFT)
+            self._reply(text)
 
     def _command_search(self, arg: str) -> None:
         """The search behind one cycle, request to routing, from what the
@@ -689,17 +689,14 @@ class BedlamApp(App[int]):
             return
         steps = self._cycles[cycle]
         if "searching" not in steps:
-            self._say(f"  cycle {cycle} has not searched yet", style=_SOFT)
+            self._reply(f"  cycle {cycle} has not searched yet")
             return
         queries = steps["searching"]["queries"]
         calls = self._search.calls if self._search is not None else []
         made = [next((c for c in calls if c.query == q["text"]), None) for q in queries]
         live = sum(c is not None and not c.cached for c in made)
         head = f"  cycle {cycle} · {len(queries)} queries · {live} live"
-        self._say(
-            f"{head}, {len(queries) - live} cached · {live * CREDITS_PER_SEARCH} credits",
-            style=_SOFT,
-        )
+        self._reply(f"{head}, {len(queries) - live} cached · {live * CREDITS_PER_SEARCH} credits")
         width = self._reply_width()
         for i, (query, call) in enumerate(zip(queries, made, strict=True), 1):
             if call is None:
@@ -712,17 +709,17 @@ class BedlamApp(App[int]):
                 tail = f"{call.latency_ms:>5.0f} ms · {call.results} kept"
                 tail += f", {call.filtered} cut" if call.filtered else ""
             label = fit(_query_label(query), width - len(tail) - 6)
-            self._say(f"  {i}  {label:<{width - len(tail) - 6}} {tail}", style=_SOFT)
-        self._say("", style=_SOFT)
-        self._say(f"     advanced depth · up to {MAX_RESULTS} results a query", style=_SOFT)
+            self._reply(f"  {i}  {label:<{width - len(tail) - 6}} {tail}")
+        self._reply("")
+        self._reply(f"     advanced depth · up to {MAX_RESULTS} results a query")
         sites = f"only from {', '.join(INCLUDE_DOMAINS)}"
         for line in wrap(sites, indent=10, width=width - 5):
-            self._say(f"     {line}", style=_SOFT)
-        self._say(f"     never from {' or '.join(EXCLUDE_DOMAINS)}", style=_SOFT)
+            self._reply(f"     {line}")
+        self._reply(f"     never from {' or '.join(EXCLUDE_DOMAINS)}")
         routed = steps.get("routed")
         if routed is None:
-            self._say("", style=_SOFT)
-            self._say("  Nano is labelling the results", style=_SOFT)
+            self._reply("")
+            self._reply("  Nano is labelling the results")
             return
         results = routed["results"]
         counts = {layer.value: 0 for layer in Layer}
@@ -731,21 +728,20 @@ class BedlamApp(App[int]):
                 counts[result["layer"]] += 1
         unnamed = len(results) - sum(counts.values())
         named = " · ".join(f"{layer} {n}" for layer, n in counts.items())
-        self._say("", style=_SOFT)
-        self._say(f"  Nano labelled {len(results)} results: {named} · none {unnamed}", style=_SOFT)
-        self._say("", style=_SOFT)
+        self._reply("")
+        self._reply(f"  Nano labelled {len(results)} results: {named} · none {unnamed}")
+        self._reply("")
         weights = routed["routing"]["weights"]
         top = max(weights.values(), default=0.0)
         for layer in Layer:
             weight = weights.get(layer.value, 0.0)
             filled = round(weight / top * _SEARCH_BAR) if top else 0
             bar = "█" * filled + " " * (_SEARCH_BAR - filled)
-            self._say(f"     {layer.value:<6} {bar}  {weight:.2f}", style=_SOFT)
-        self._say("", style=_SOFT)
+            self._reply(f"     {layer.value:<6} {bar}  {weight:.2f}")
+        self._reply("")
         basis = routed["routing"]["basis"]
-        self._say(
-            f"  → {routed['specialist']} specialist ({basis}). /why {cycle} lists the results",
-            style=_SOFT,
+        self._reply(
+            f"  → {routed['specialist']} specialist ({basis}). /why {cycle} lists the results"
         )
 
     def _command_loop(self, arg: str) -> None:
@@ -756,20 +752,20 @@ class BedlamApp(App[int]):
             for n in range(1, MAX_CYCLES + 1)
         ]
         after = "the trade-off  now" if escalated else "then the trade-off"
-        self._say("", style=_SOFT)
-        self._say("   " + "      ".join([*rounds, after]), style=_SOFT)
-        self._say("", style=_SOFT)
+        self._reply("")
+        self._reply("   " + "      ".join([*rounds, after]))
+        self._reply("")
         current = 0 if escalated else self.now.step
         for n, (title, about) in enumerate(LOOP_STEPS, 1):
             here = n == current
             line = f"   {n}  {title:<16}{'◀' if here else ' '}   {about}"
             self._say(line, style=f"bold {ACCENT}" if here else _SOFT)
-            self._say("   │", style=_SOFT)
+            self._reply("   │")
         if cycle < MAX_CYCLES and not escalated:
-            self._say(f"   └──→  round {cycle + 1} starts at 1, aimed at the gap", style=_SOFT)
+            self._reply(f"   └──→  round {cycle + 1} starts at 1, aimed at the gap")
         else:
-            self._say(f"   └──→  no round {MAX_CYCLES + 1}: the trade-off is next", style=_SOFT)
-        self._say("", style=_SOFT)
+            self._reply(f"   └──→  no round {MAX_CYCLES + 1}: the trade-off is next")
+        self._reply("")
         tail = "   after round 2:   TRADE-OFF  →  YOUR CHOICE  →  THE COST"
         self._say(tail, style=f"bold {ACCENT}" if escalated else _SOFT)
 
@@ -783,17 +779,17 @@ class BedlamApp(App[int]):
             patch = steps.get("patched", {}).get("patch")
             analysis = steps.get("analysed", {}).get("analysis")
         if patch is None:
-            self._say("  no patch read yet", style=_SOFT)
+            self._reply("  no patch read yet")
             return
-        self._say(f"  patch: {patch['source']} ({patch['chars']} chars)", style=_SOFT)
+        self._reply(f"  patch: {patch['source']} ({patch['chars']} chars)")
         if analysis is None:
-            self._say("  still reading it", style=_SOFT)
+            self._reply("  still reading it")
             return
         defended = _defended(analysis)
-        self._say(f"  defends: {defended or 'none'}", style=_SOFT)
+        self._reply(f"  defends: {defended or 'none'}")
         gaps = "; ".join(analysis["gaps"]) or "none found"
         for line in wrap(f"gaps: {gaps}", indent=6, width=self._reply_width() - 2):
-            self._say(f"  {line}", style=_SOFT)
+            self._reply(f"  {line}")
 
     # -- post-mortem ------------------------------------------------------------
 
@@ -803,11 +799,11 @@ class BedlamApp(App[int]):
         lines = textwrap.wrap(" ".join(value.split()), width=self._reply_width() - indent)
         for i, line in enumerate(lines or [""]):
             head = f"  {label:<{_FIELD}} " if i == 0 else " " * indent
-            self._say(head + line, style=_SOFT)
+            self._reply(head + line)
 
     def _command_cycles(self, arg: str) -> None:
         if not self._cycles:
-            self._say("  no cycle has started yet", style=_SOFT)
+            self._reply("  no cycle has started yet")
             return
         for cycle, steps in sorted(self._cycles.items()):
             fault = steps.get("injecting", {}).get("fault", "no fault yet")
@@ -820,13 +816,13 @@ class BedlamApp(App[int]):
             if analysis is not None:
                 defended = _defended(analysis)
                 read = f"defends {defended or 'nothing'} · {len(analysis['gaps'])} gaps"
-            self._say(f"  c{cycle}  {fault} · {seen} → {read}", style=_SOFT)
+            self._reply(f"  c{cycle}  {fault} · {seen} → {read}")
         if self._trade_off is not None:
             chosen = self._run_events.get("chosen")
             outcome = "waiting for your choice"
             if chosen is not None:
                 outcome = f"you chose {chosen['choice'].upper()}: {chosen['option']['title']}"
-            self._say(f"  tf  {self._trade_off['axis']} → {outcome}", style=_SOFT)
+            self._reply(f"  tf  {self._trade_off['axis']} → {outcome}")
 
     def _command_cycle(self, arg: str) -> None:
         cycle = self._cycle_arg(arg, "cycle")
@@ -881,7 +877,7 @@ class BedlamApp(App[int]):
         records = self._models.records if self._models is not None else []
         searches = self._search.calls if self._search is not None else []
         if not records and not searches:
-            self._say("  no model or search calls yet", style=_SOFT)
+            self._reply("  no model or search calls yet")
             return
         sites: dict[str, list[CallRecord]] = {}
         for record in records:
@@ -896,18 +892,18 @@ class BedlamApp(App[int]):
             extra = [f"{fallbacks} fallback"] * bool(fallbacks) + [f"{failed} failed"] * bool(
                 failed
             )
-            self._say(" · ".join([line, *extra]), style=_SOFT)
+            self._reply(" · ".join([line, *extra]))
         if searches:
             cached = sum(c.cached for c in searches)
             latency = sum(c.latency_ms for c in searches) / len(searches)
             head = f"  {'search':<24} {'Tavily':<10} {len(searches):>2}×"
-            self._say(f"{head} {cached:>3} cached {latency:>6.0f}ms", style=_SOFT)
-        self._say(f"  total: {self._usage()}", style=_SOFT)
+            self._reply(f"{head} {cached:>3} cached {latency:>6.0f}ms")
+        self._reply(f"  total: {self._usage()}")
 
     def _command_cost(self, arg: str) -> None:
         chosen = self._run_events.get("chosen")
         if chosen is None:
-            self._say("  no choice made yet. the cost shows once you pick A or B", style=_SOFT)
+            self._reply("  no choice made yet. the cost shows once you pick A or B")
             return
         option = chosen["option"]
         self._field("you chose", f"{chosen['choice'].upper()}: {option['title']}")
@@ -929,15 +925,15 @@ class BedlamApp(App[int]):
     def _command_log(self, arg: str) -> None:
         frame = self.query_one("#frame")
         if self._trade_off is None or not (self._past_choice() or self.choices.waiting):
-            self._say("  the run log is already on screen", style=_SOFT)
+            self._reply("  the run log is already on screen")
             return
         frame.toggle_class("-escalation")
         self._render_chrome()
         self._home().focus()
         if frame.has_class("-escalation"):
-            self._say("  back on the trade-off page", style=_SOFT)
+            self._reply("  back on the trade-off page")
         else:
-            self._say("  the run log. /log goes back to the trade-off", style=_SOFT)
+            self._reply("  the run log. /log goes back to the trade-off")
 
     def _command_seed(self, arg: str) -> None:
         seed = self.root_seed
@@ -946,7 +942,7 @@ class BedlamApp(App[int]):
             f"  run it again: make run SEED={seed}",
             "  live model replies can still vary; make test replays a run exactly",
         ):
-            self._say(line, style=_SOFT)
+            self._reply(line)
 
     def _command_grep(self, arg: str) -> None:
         self._grep = arg.lower() or None
@@ -960,17 +956,17 @@ class BedlamApp(App[int]):
         else:
             rows = range(len(self._timeline_rows))
             hits = sum(1 for i in rows if i not in self._pinned and self._shown(i))
-        self._say(f"  {hits} lines match. /grep alone shows all", style=_SOFT)
+        self._reply(f"  {hits} lines match. /grep alone shows all")
 
     def _command_zoom(self, arg: str) -> None:
         if self.query_one("#frame").has_class("-escalation"):
-            self._say("  /zoom works on the run log. /log shows it", style=_SOFT)
+            self._reply("  /zoom works on the run log. /log shows it")
             return
         log = arg.lower()
         # /zoom alone ends a zoom; with none on, it would change nothing.
         zoomed = self.query_one("#frame").has_class("-zoomed")
         if (log and log not in ZOOMS) or (not log and not zoomed):
-            self._say("zoom what? /zoom timeline or /zoom agent", style=_SOFT)
+            self._reply("zoom what? /zoom timeline or /zoom agent")
             return
         body = self.query_one("#body")
         body.remove_class(*(f"-zoom-{name}" for name in ZOOMS))
@@ -988,19 +984,19 @@ class BedlamApp(App[int]):
                 if self._shown(i)
             ]
         elif arg:
-            self._say("copy what? /copy or /copy timeline", style=_SOFT)
+            self._reply("copy what? /copy or /copy timeline")
             return
         else:
             lines = self._last_reply
         if not lines:
-            self._say("  nothing to copy yet", style=_SOFT)
+            self._reply("  nothing to copy yet")
             return
         self.copy_to_clipboard("\n".join(lines))
-        self._say(f"  copied {len(lines)} lines, if your terminal allows it", style=_SOFT)
+        self._reply(f"  copied {len(lines)} lines, if your terminal allows it")
 
     def _command_save(self, arg: str) -> None:
         if self.trace_file is None:
-            self._say("  this run has no trace file to save beside", style=_SOFT)
+            self._reply("  this run has no trace file to save beside")
             return
         path = self.trace_file.with_suffix(".txt")
         agent = [self._agent_line(*row, width=LINE).plain for row in self._agent_rows]
@@ -1017,17 +1013,17 @@ class BedlamApp(App[int]):
             text += ["", "POST-MORTEM", *(str(line) for line, _ in self._page_rows)]
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("\n".join(text) + "\n", encoding="utf-8")
-        self._say(f"  saved {_shown_path(path)}", style=_SOFT)
+        self._reply(f"  saved {_shown_path(path)}")
 
     def _command_shot(self, arg: str) -> None:
         if self.trace_file is None:
-            self._say("  this run has no trace file to save beside", style=_SOFT)
+            self._reply("  this run has no trace file to save beside")
             return
         self._shots += 1
         path = self.trace_file.with_name(f"{self.trace_file.stem}-shot{self._shots}.svg")
         path.parent.mkdir(parents=True, exist_ok=True)
         self.save_screenshot(filename=path.name, path=str(path.parent))
-        self._say(f"  saved {_shown_path(path)}", style=_SOFT)
+        self._reply(f"  saved {_shown_path(path)}")
 
     def _command_patch(self, arg: str) -> None:
         self.action_patch()
@@ -1035,7 +1031,7 @@ class BedlamApp(App[int]):
     def _command_choose(self, arg: str) -> None:
         key = arg.lower()
         if key not in KEYS:
-            self._say("choose a or b, e.g. /choose a", style=_SOFT)
+            self._reply("choose a or b, e.g. /choose a")
             return
         self.action_choose(key)
 
@@ -1639,6 +1635,10 @@ class BedlamApp(App[int]):
         if self._on_page():
             return _inner(self.query_one("#postmortem", RichLog))
         return self._say_width()
+
+    def _reply(self, text: str | Text) -> None:
+        """One line of a command's reply, in the soft style replies share."""
+        self._say(text, style=_SOFT)
 
     def _say(self, text: str | Text, style: str = "") -> None:
         if self._replying is not None:
