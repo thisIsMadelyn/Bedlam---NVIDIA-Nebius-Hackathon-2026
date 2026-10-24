@@ -1096,9 +1096,7 @@ class BedlamApp(App[int]):
         self._probing_since = time.monotonic()
 
     def _on_baseline(self, fields: dict[str, Any]) -> None:
-        self._probing_since = None
-        self._health = fields["snapshot"]
-        self._say("baseline: " + self._health_line(), style=GO)
+        self._snapshot(fields, "baseline", GO)
 
     def _on_cycle_started(self, fields: dict[str, Any]) -> None:
         rule = f"── cycle {fields['cycle']} of {MAX_CYCLES} "
@@ -1126,9 +1124,7 @@ class BedlamApp(App[int]):
         self._say(f"injecting {self._fault}, blast radius {blast}", style=f"bold {DAMAGE}")
 
     def _on_probed(self, fields: dict[str, Any]) -> None:
-        self._probing_since = None
-        self._health = fields["snapshot"]
-        self._say("under fault: " + self._health_line(), style=DAMAGE)
+        self._snapshot(fields, "under fault", DAMAGE)
 
     def _on_symptom(self, fields: dict[str, Any]) -> None:
         symptom = fields["symptom"]
@@ -1166,10 +1162,7 @@ class BedlamApp(App[int]):
             self._say(line, style=style)
 
     def _on_fault_removed(self, fields: dict[str, Any]) -> None:
-        self._probing_since = None
-        self._health = fields["snapshot"]
-        self._fault, self._blast = None, []
-        self._say("fault removed: " + self._health_line(), style=GO)
+        self._snapshot(fields, "fault removed", GO, clear=True)
 
     def _on_analysed(self, fields: dict[str, Any]) -> None:
         analysis = self._analysis = fields["analysis"]
@@ -1205,15 +1198,20 @@ class BedlamApp(App[int]):
         self._say(f"showing the cost: {self._fault}, blast radius {blast}", style=f"bold {DAMAGE}")
 
     def _on_cost_shown(self, fields: dict[str, Any]) -> None:
-        self._probing_since = None
-        self._health = fields["snapshot"]
-        self._say("under the cost: " + self._health_line(), style=DAMAGE)
+        self._snapshot(fields, "under the cost", DAMAGE)
 
     def _on_cost_removed(self, fields: dict[str, Any]) -> None:
+        self._snapshot(fields, "cost removed", GO, clear=True)
+
+    def _snapshot(
+        self, fields: dict[str, Any], label: str, style: str, *, clear: bool = False
+    ) -> None:
+        """Hold a probe snapshot for the panels and say it; `clear` drops the fault."""
         self._probing_since = None
         self._health = fields["snapshot"]
-        self._fault, self._blast = None, []
-        self._say("cost removed: " + self._health_line(), style=GO)
+        if clear:
+            self._fault, self._blast = None, []
+        self._say(f"{label}: " + self._health_line(), style=style)
 
     def _on_finished(self, fields: dict[str, Any]) -> None:
         escalation = fields.get("escalation") or {}
