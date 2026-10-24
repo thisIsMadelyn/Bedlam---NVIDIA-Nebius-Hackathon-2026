@@ -30,11 +30,14 @@ badges of either kind.
   the nine-item `bedlam/tui.py` clean-up, weak "why" evidence, clean run 3
   and a fresh clone on another machine. The README setup stopped at
   `make smoke`.
-- **End status:** `b07e545` plus this entry. 209 tests, lint clean. The
-  replay recording was re-recorded twice, for the trade-off and the "why"
-  prompt changes. Phase 5's three clean runs are ticked; the fresh clone on
-  another machine is still open. Phase 8 is ticked except the video URL.
-  `tui.py` items 1-7 are done, 8 and 9 are left.
+- **End status:** `84ef844` plus this entry (updated after the first log
+  at `c5f1078`). 209 tests, lint clean. The replay recording was
+  re-recorded twice, for the trade-off and the "why" prompt changes.
+  Phase 5's three clean runs and Phase 6's Nebius section box are ticked.
+  The fresh clone on another machine is still open, and it also decides
+  Phase 6's "a stranger can run it" box. Phase 8 is ticked except the video
+  URL. `tui.py` items 1-7 are done, 8 and 9 are left. A first video script
+  is drafted and kept local, out of the repo.
 - **Badges:**
   - 🆕 Addition — README setup runs from `git clone --recurse-submodules`
     through `make up` to `make run SCRIPTED=1`, and says what P does in
@@ -58,7 +61,19 @@ badges of either kind.
     `ed27dbf`, `b07e545`).
   - README screenshot replaced (`e4cf6db`) and README status updated
     (`bdccfc5`). PLAN ticks: Phase 8 items (`466e234`), Phase 5 clean runs
-    (`b130f40`).
+    (`b130f40`), Phase 6 Nebius section (`84ef844`).
+  - 🆕 Addition — `docs/manual.md`, the developer manual: the loop step by
+    step, scripted and real patch mode, every key and command, each part of
+    the screen, the post-mortem and the files a run leaves. Linked from the
+    README setup (`6f01386`).
+  - The README's first line names the target user as on Devpost and in the
+    video: backend developers who fix an outage and ship the patch hoping
+    it holds (`3683aa8`).
+  - 🐛 Bug fix — the README's Nemotron and Nebius section named an "AGENT"
+    panel (it is AI MODELS) and said one seed reproduces a live run, which
+    Token Factory does not guarantee. It now says the replay test is what
+    reproduces a run, and ends with why the target never runs on Nebius,
+    so it reads on its own (`b8a019b`).
 
 ## Session [2026-10-22-2250]
 
