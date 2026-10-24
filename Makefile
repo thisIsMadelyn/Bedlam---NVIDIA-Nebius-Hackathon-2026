@@ -22,8 +22,9 @@ down:
 	docker compose down -v
 
 # SEED=1729 picks the root seed; without it, BEDLAM_SEED or the default.
+# SCRIPTED=1 applies the prepared diffs in demo/patches/ instead of your edits.
 run:
-	python -m bedlam.tui $(if $(SEED),--seed $(SEED))
+	python -m bedlam.tui $(if $(SEED),--seed $(SEED)) $(if $(SCRIPTED),--scripted)
 
 headless:
 	python -m bedlam.loop --headless

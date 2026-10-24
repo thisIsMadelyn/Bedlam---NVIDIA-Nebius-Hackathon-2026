@@ -42,13 +42,29 @@ current phase.
 
 ## Setup
 
-Requires Python 3.12+ and Docker.
+Requires Python 3.12+, Docker with Compose, `make`, a Nebius Token Factory
+API key and a Tavily API key (the free tier is enough).
 
 ```bash
-cp .env.example .env     # then fill in NEBIUS_API_KEY and TAVILY_API_KEY
+git clone --recurse-submodules https://github.com/thisIsMadelyn/Bedlam---NVIDIA-Nebius-Hackathon-2026.git
+cd Bedlam---NVIDIA-Nebius-Hackathon-2026
+python -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
-make smoke               # verifies both live APIs
+cp .env.example .env        # then fill in NEBIUS_API_KEY and TAVILY_API_KEY
+make smoke                  # verifies both live APIs
+make up                     # starts the target app, Postgres, Redis and Toxiproxy
+make run SCRIPTED=1         # launches Bedlam with the prepared patches
 ```
+
+If you cloned without `--recurse-submodules`, run `git submodule update --init`
+before `make up`: the target app is a submodule in `targets/fastapi-boilerplate`.
+
+At your turn, press P to hand over the fix. With `SCRIPTED=1`, Bedlam applies
+one of the prepared diffs in `demo/patches/` that targets the live fault, and
+reverts it when you quit. Without it (`make run`), Bedlam reads your own
+`git diff` of `targets/fastapi-boilerplate`, so patch the app yourself before
+pressing P. `make down` stops the stack and removes its volumes.
 
 ## The jester
 
