@@ -1085,8 +1085,7 @@ class BedlamApp(App[int]):
         line = self._voice.say(kind, fields)
         if line:
             quoted = self._voice.quoted
-            for part in wrap("» " + line, indent=2, width=self._say_width()):
-                self._say(part, style=_voice_style(quoted))
+            self._say_wrapped("» " + line, 2, _voice_style(quoted))
             # The timeline scrolls; BEDLAM SAYS holds the line until the next.
             self._said = (line, quoted)
             log_event(_LOG, "voice", kind=kind, cycle=self._cycle, line=line, quote=quoted)
@@ -1114,8 +1113,7 @@ class BedlamApp(App[int]):
         selection = fields["selection"]
         self._say(f"picked {selection['fault']['id']} from {len(selection['eligible'])} eligible")
         if selection.get("rationale"):
-            for line in wrap("why: " + selection["rationale"], indent=5, width=self._say_width()):
-                self._say(line, style=_SOFT)
+            self._say_wrapped("why: " + selection["rationale"], 5, _SOFT)
 
     def _on_injecting(self, fields: dict[str, Any]) -> None:
         blast = self._hold_fault(fields)
@@ -1128,8 +1126,7 @@ class BedlamApp(App[int]):
         symptom = fields["symptom"]
         where = f" on {symptom['layer']}" if symptom["layer"] else ""
         text = f"symptom: {symptom['kind']}{where}. {symptom['summary']}"
-        for line in wrap(text, indent=9, width=self._say_width()):
-            self._say(line, style=DAMAGE)
+        self._say_wrapped(text, 9, DAMAGE)
 
     def _on_awaiting_patch(self, fields: dict[str, Any]) -> None:
         if self.real:
@@ -1156,8 +1153,7 @@ class BedlamApp(App[int]):
         check = fields["check"]
         text = f"through the app: {_check_text(check)}"
         style = f"bold {GO}" if check["held"] else f"bold {DAMAGE}"
-        for line in wrap(text, indent=17, width=self._say_width()):
-            self._say(line, style=style)
+        self._say_wrapped(text, 17, style)
 
     def _on_fault_removed(self, fields: dict[str, Any]) -> None:
         self._snapshot(fields, "fault removed", GO, clear=True)
@@ -1168,8 +1164,7 @@ class BedlamApp(App[int]):
         self._say(f"patch defends: {defended}")
         if analysis["gaps"]:
             gaps = "gaps: " + "; ".join(analysis["gaps"])
-            for line in wrap(gaps, indent=6, width=self._say_width()):
-                self._say(line, style=_SOFT)
+            self._say_wrapped(gaps, 6, _SOFT)
 
     def _on_escalating(self, fields: dict[str, Any]) -> None:
         self._escalated = True
@@ -1192,6 +1187,11 @@ class BedlamApp(App[int]):
     def _on_showing_cost(self, fields: dict[str, Any]) -> None:
         blast = self._hold_fault(fields)
         self._say(f"showing the cost: {self._fault}, blast radius {blast}", style=f"bold {DAMAGE}")
+
+    def _say_wrapped(self, text: str, indent: int, style: str = "") -> None:
+        """Say prose that may run long, wrapped to the timeline with a hanging indent."""
+        for line in wrap(text, indent=indent, width=self._say_width()):
+            self._say(line, style=style)
 
     def _rule(self, text: str) -> None:
         """A section rule across the timeline: `text` then dashes to the edge."""
