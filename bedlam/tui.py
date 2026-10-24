@@ -1787,7 +1787,7 @@ def routing_lines(fields: dict[str, Any], width: int) -> list[tuple[str, str]]:
             # A title only where enough of it fits to read; never a stub.
             if width - len(text) - 2 >= _TITLE_MIN:
                 text += f"  {result['title']}"
-            lines.append((_clip(text, width), _SOFT))
+            lines.append((fit(text, width), _SOFT))
         rest = results[_ROUTING_RESULTS:]
         if rest:
             counts = [
@@ -1816,10 +1816,6 @@ def routing_lines(fields: dict[str, Any], width: int) -> list[tuple[str, str]]:
     )
     lines.append((closing, f"bold {ACCENT}"))
     return lines
-
-
-def _clip(text: str, width: int) -> str:
-    return text if len(text) <= width else text[: width - 1] + "…"
 
 
 FIELD_WIDTH: Final = 78
