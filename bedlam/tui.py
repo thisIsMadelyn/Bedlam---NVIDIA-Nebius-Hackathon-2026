@@ -103,24 +103,24 @@ _WIDE: Final = 2 * WIDTH + 2
 _JESTER: Final = jester.WIDTH + 2
 _ROOMY: Final = WIDTH + _JESTER
 
-# Palette. The four given colours, plus shades of them for the background
-# and text, and one red that marks damage only.
-INK: Final = "#48435C"
-MUTED: Final = "#5A5766"
-ACCENT: Final = "#9792E3"
+# Palette: gold and cyan for the jester's motley on an indigo ground, one
+# green for go, and one red that marks damage only.
+INK: Final = "#19647E"
+MUTED: Final = "#4B3F72"
+ACCENT: Final = "#FFC857"
 GO: Final = "#61E786"
 DAMAGE: Final = "#E5484D"
-_BACKGROUND: Final = "#1C1A24"
-_SURFACE: Final = "#23212D"
+_BACKGROUND: Final = "#1F2041"
+_SURFACE: Final = "#26284F"
 _TEXT: Final = "#E6E4EF"
-_SOFT: Final = "#A29FB2"
+_SOFT: Final = "#119DA4"
 # The post-mortem field: dim, but 4:1 on the background, so a laptop panel
-# in a lit room still shows it (MUTED, 2.45:1, does not).
-_FIELD_INK: Final = "#7B7792"
-# Its glow, a lighter ink that swings between A and B: the crest is ACCENT,
-# its edges halfway between the two.
+# in a lit room still shows it (MUTED, 1.68:1, does not). It is 4.76:1.
+_FIELD_INK: Final = "#119DA4"
+# Its glow swings from the field ink to gold: the crest is ACCENT, its
+# edges halfway between the two.
 _FIELD_GLOW: Final = ACCENT
-_FIELD_GLOW_EDGE: Final = "#8984BA"
+_FIELD_GLOW_EDGE: Final = "#88B27D"
 _JESTER_COLOURS: Final = {
     "accent": ACCENT, "ink": INK, "muted": MUTED, "go": GO, "soft": _SOFT, "text": _TEXT,
 }  # fmt: skip
