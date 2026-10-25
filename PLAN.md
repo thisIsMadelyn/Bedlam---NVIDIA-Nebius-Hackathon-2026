@@ -346,7 +346,7 @@ Artifacts:
 - No NVIDIA logos or third-party trademarks anywhere in frame
 
 Done when:
-- [ ] Runtime under 3:00
+- [x] Runtime under 3:00
 - [ ] Opened in a private browser window to confirm public visibility
 - [ ] The live search call is unambiguously visible
 
@@ -362,7 +362,7 @@ Do not leave this for the 30th.
 - [x] Limitations from `LIMITATIONS.md` summarised in the description, with a link
 - [x] Separate field: NVIDIA models / Token Factory / Nebius tools usage
 - [x] Demo URL: repo link plus "test build — `docker compose up`, see README"
-- [ ] Video URL
+- [x] Video URL
 - [x] Feedback field completed seriously
 - [x] Repo public, LICENSE badge visible in About
 
