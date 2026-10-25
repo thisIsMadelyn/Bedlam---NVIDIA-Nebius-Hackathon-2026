@@ -67,7 +67,7 @@ reverts it when you quit. Without it (`make run`), Bedlam reads your own
 `git diff` of `targets/fastapi-boilerplate`, so patch the app yourself before
 pressing P. `make down` stops the stack and removes its volumes.
 
-The [manual](docs/manual.md) covers the rest: the loop step by step, every key
+The [manual](MANUAL.md) covers the rest: the loop step by step, every key
 and command, and what each part of the screen shows.
 
 ## The jester
