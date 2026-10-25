@@ -28,11 +28,15 @@ badges of either kind.
 - **Start status:** `4579738`, working tree clean, 209 tests. The TUI used
   a purple palette that read as generic. The demo video was not shot yet,
   and the fresh clone on another machine was still open.
-- **End status:** `2bf1719` plus this entry. 209 tests, lint clean. The
-  TUI, the jester splash and the README's top image all use one teal and
-  ash grey palette. The demo video is filmed and cut to 3:00, outside the
-  repo. Still open: trim it under 3:00, upload it public, add its URL to
-  Devpost, and the fresh clone.
+- **End status:** `241b58c` plus this entry (updated after the first log
+  at `8ceb8f3`). 209 tests, lint clean. The TUI, the jester splash and the
+  README's top image all use one teal and ash grey palette. The demo video
+  is recorded as one linear run, edited outside the repo, trimmed under
+  3:00 and uploaded to YouTube, and its URL is in the Devpost form. Phase
+  7's runtime box and Phase 8's video URL box are ticked. Still open:
+  YouTube's account verification, the private-window check that the video
+  is public, the Tavily visibility box, submitting the form, and the fresh
+  clone.
 - **Badges:**
   - 🆕 Addition — new TUI palette: ash grey and teal on ink black, with
     one green for healthy and one red kept for damage only. The
@@ -46,6 +50,8 @@ badges of either kind.
     root, next to `PLAN.md` and `LIMITATIONS.md`, and the README link
     follows it (`2bf1719`). The unreferenced `docs/correct-screenshot.png`
     is removed (`cee2140`).
+  - `PLAN.md`: Phase 7 "Runtime under 3:00" and Phase 8 "Video URL"
+    ticked (`241b58c`).
 
 ## Session [2026-10-24-2206]
 
