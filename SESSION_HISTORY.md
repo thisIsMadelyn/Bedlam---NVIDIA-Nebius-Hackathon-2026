@@ -23,6 +23,30 @@ badges of either kind.
 
 ---
 
+## Session [2026-10-25-1208]
+
+- **Start status:** `4579738`, working tree clean, 209 tests. The TUI used
+  a purple palette that read as generic. The demo video was not shot yet,
+  and the fresh clone on another machine was still open.
+- **End status:** `2bf1719` plus this entry. 209 tests, lint clean. The
+  TUI, the jester splash and the README's top image all use one teal and
+  ash grey palette. The demo video is filmed and cut to 3:00, outside the
+  repo. Still open: trim it under 3:00, upload it public, add its URL to
+  Devpost, and the fresh clone.
+- **Badges:**
+  - 🆕 Addition — new TUI palette: ash grey and teal on ink black, with
+    one green for healthy and one red kept for damage only. The
+    post-mortem field ink stays at 4.48:1 on the background. A gold and
+    cyan palette was committed first (`324f6bc`) and replaced after a
+    side-by-side look (`61503cb`).
+  - 🆕 Addition — `docs/jester-splash.svg` re-rendered in the new palette,
+    same layout as before (`d573687`). The README's top image is now
+    `docs/teal-2.png` (`6ac6cc4`).
+  - The manual moved from `docs/manual.md` to `MANUAL.md` in the repo
+    root, next to `PLAN.md` and `LIMITATIONS.md`, and the README link
+    follows it (`2bf1719`). The unreferenced `docs/correct-screenshot.png`
+    is removed (`cee2140`).
+
 ## Session [2026-10-24-2206]
 
 - **Start status:** `9a5a1b0`, working tree clean, 206 tests. Phase 5 in
