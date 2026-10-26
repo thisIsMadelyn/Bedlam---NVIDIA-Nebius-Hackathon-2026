@@ -23,6 +23,21 @@ badges of either kind.
 
 ---
 
+## Session [2026-10-26-1532]
+
+- **Start status:** `ba5365e`, working tree clean. Open: YouTube
+  verification, the private-window check, the Tavily visibility box,
+  three unticked Phase 0 boxes and the fresh clone.
+- **End status:** the video plays publicly from any browser. `make smoke`
+  passed live: all four model IDs answered with their exact casing and
+  Tavily returned real asyncpg issues. Phase 0 (license, smoke scripts,
+  model IDs) and Phase 7 (public visibility, search visible) are ticked.
+  The `$25` promo code stays unticked: it could not be activated. Still
+  open: the fresh clone on another machine.
+- **Badges:**
+  - 🐛 Bug fix — `scripts/smoke_tavily.py` crashed printing a search
+    snippet on a non-UTF-8 Windows console (cp1253). It now writes UTF-8.
+
 ## Session [2026-10-25-1208]
 
 - **Start status:** `4579738`, working tree clean, 209 tests. The TUI used

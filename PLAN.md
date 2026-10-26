@@ -96,9 +96,9 @@ Artifacts:
 - `pyproject.toml`, Python 3.12, dependency manager chosen and committed
 
 Done when:
-- [ ] GitHub About panel shows "MIT license"
-- [ ] Both smoke scripts return 200 with real content
-- [ ] All four model IDs confirmed callable with exact casing, recorded in `model_map`
+- [x] GitHub About panel shows "MIT license"
+- [x] Both smoke scripts return 200 with real content
+- [x] All four model IDs confirmed callable with exact casing, recorded in `model_map`
 - [ ] `$25` promo code submitted at `nebius.com/promo-code` using the account email
 
 Risk: model ID casing is inconsistent across the four models. Copy verbatim, never
@@ -347,8 +347,8 @@ Artifacts:
 
 Done when:
 - [x] Runtime under 3:00
-- [ ] Opened in a private browser window to confirm public visibility
-- [ ] The live search call is unambiguously visible
+- [x] Opened in a private browser window to confirm public visibility
+- [x] The live search call is unambiguously visible
 
 ---
 
