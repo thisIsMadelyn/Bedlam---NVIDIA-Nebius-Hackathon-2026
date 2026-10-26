@@ -32,8 +32,10 @@ badges of either kind.
   passed live: all four model IDs answered with their exact casing and
   Tavily returned real asyncpg issues. Phase 0 (license, smoke scripts,
   model IDs) and Phase 7 (public visibility, search visible) are ticked.
-  The `$25` promo code stays unticked: it could not be activated. Still
-  open: the fresh clone on another machine.
+  The `$25` promo code stays unticked: it could not be activated. The
+  fresh clone was skipped, so its Phase 5 and Phase 6 boxes stay
+  unticked. The project is submitted on Devpost, and the `submission`
+  tag marks `4a338a3`.
 - **Badges:**
   - 🐛 Bug fix — `scripts/smoke_tavily.py` crashed printing a search
     snippet on a non-UTF-8 Windows console (cp1253). It now writes UTF-8.
