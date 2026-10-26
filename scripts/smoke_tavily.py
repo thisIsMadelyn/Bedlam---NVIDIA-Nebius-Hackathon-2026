@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import time
 
 from dotenv import load_dotenv
@@ -38,6 +39,8 @@ NOISE_PATH_MARKERS = ("/commit/", "/blob/")
 
 
 def main() -> int:
+    # Search snippets carry characters a non-UTF-8 Windows console cannot encode.
+    sys.stdout.reconfigure(encoding="utf-8")
     load_dotenv()
     key = os.environ.get("TAVILY_API_KEY")
     if not key:
