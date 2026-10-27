@@ -33,6 +33,46 @@ Bedlam's brain, never its victim.
   a live Nemotron call on Nebius Token Factory, but Nebius never hosts the app
   being attacked.
 
+## Tavily usage
+
+Tavily decides which part of your app Bedlam attacks next. Every round runs
+live Tavily searches during the run, and their results pick the specialist.
+Nothing is pre-fetched or stored as a fixture.
+
+### What it searches for
+
+- **Your dependencies, not the app's name.** Nano writes each query from a
+  dependency, its resolved version and a failure term, for example
+  `asyncpg 0.29 connection pool exhaustion`. Searching the boilerplate's name
+  only returns noise.
+- **Failure stories, not CVE lists.** Results come only from github.com,
+  stackoverflow.com, dev.to, medium.com, readthedocs.io, sqlalchemy.org and
+  redis.io. `nvd.nist.gov` and `osv.dev` are excluded on purpose: they list
+  vulnerabilities but not why a pool never recovers.
+
+### How it routes the attack
+
+1. Nano labels every Tavily result with the layer it is about: api, db or
+   cache.
+2. Each layer's weight is the sum of the Tavily relevance scores of the
+   results labelled with it.
+3. The heaviest layer's specialist designs the next fault.
+
+If the search returns something different, a different specialist designs
+the fault. The probes decide only when no result is about any layer, and
+the screen says when that happens.
+
+### Where to see it
+
+- The cyan `tavily` lines in the AI MODELS panel are the live searches as
+  they happen.
+- `/why` shows each layer's weight and the results behind it, strongest
+  first. `/why 1` shows cycle 1.
+- `/search` shows a cycle's queries, their latency, the credits spent and
+  the domains searched.
+- Results are cached within one run and never across runs, so a new run
+  searches again.
+
 ## Status
 
 Phases 1–4 complete: fault injection, the headless decision chain, the
