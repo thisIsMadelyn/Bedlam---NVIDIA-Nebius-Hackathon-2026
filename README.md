@@ -18,8 +18,8 @@ for you.
 Bedlam is for the developer who has just patched an outage, and that developer
 is already in a terminal next to Docker. The app it attacks runs on your
 machine on purpose: Bedlam sends real faults to it, and Nebius's acceptable-use
-policy forbids attack-like traffic against Nebius-hosted systems. Nebius runs
-Bedlam's brain, never its victim.
+policy forbids attack-like traffic against anything hosted on Nebius AI Cloud,
+even your own machines. Nebius runs Bedlam's brain, never its victim.
 
 ## Limits, stated up front
 
