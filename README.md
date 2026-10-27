@@ -75,11 +75,10 @@ the screen says when that happens.
 
 ## Status
 
-Phases 1–4 complete: fault injection, the headless decision chain, the
-terminal UI and the trade-off escalation run end to end. Now in rehearsal
-and documentation (Phases 5 and 6). Still open: three clean runs in a row,
-and a fresh clone on a second machine running from this README alone. See
-`PLAN.md` for the build schedule and the current phase.
+Complete and submitted to the Nebius x NVIDIA Global AI Hackathon. Fault
+injection, the decision chain, the terminal UI and the trade-off escalation
+run end to end. Known limits are listed in `LIMITATIONS.md`, and `PLAN.md`
+records how it was built.
 
 ## Setup
 
