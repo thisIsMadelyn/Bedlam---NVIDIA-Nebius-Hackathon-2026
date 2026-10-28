@@ -404,6 +404,8 @@ def test_the_post_mortem_commands_tell_the_run_back() -> None:
                 assert label in labels, label
             await _type(pilot, "cycle 9")
             assert _reply(app, "cycle 9") == ["  no cycle 9 in this run. try /cycle 1 or /cycle 2"]
+            await _type(pilot, "cycle ²")  # a digit to str.isdigit, not to int()
+            assert _reply(app, "cycle ²") == ["  no cycle ² in this run. try /cycle 1 or /cycle 2"]
             await _type(pilot, "why 1")
             named = [r for r in app._cycles[1]["routed"]["results"] if r["layer"]]
             assert len(_reply(app, "why 1")) == 2 + len(named)

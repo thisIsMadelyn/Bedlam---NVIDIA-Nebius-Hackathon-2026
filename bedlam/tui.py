@@ -648,7 +648,8 @@ class BedlamApp(App[int]):
             return None
         if not arg:
             return seen[-1]
-        if arg.isdigit() and int(arg) in self._cycles:
+        # isascii too: "²".isdigit() is True, but int("²") raises.
+        if arg.isascii() and arg.isdigit() and int(arg) in self._cycles:
             return int(arg)
         named = " or ".join(f"/{command} {n}" for n in seen)
         self._reply(f"  no cycle {arg} in this run. try {named}")
