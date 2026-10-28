@@ -23,6 +23,27 @@ badges of either kind.
 
 ---
 
+## Session [2026-10-28-1158]
+
+- **Start status:** `f30849f`, working tree clean, 209 tests, lint clean.
+  Submitted. The `submission` tag marked `f30849f`. Last checks pending.
+- **End status:** `9097c33` plus this entry. 211 tests, lint clean. A
+  read-only bug hunt over the whole codebase found three defects, each
+  fixed in its own commit with a regression test. The `submission` tag
+  now marks `9097c33`. A live scripted run in the TUI was checked by the
+  user and works.
+- **Badges:**
+  - 🐛 Bug fix — a run that failed while applying the chosen cost made
+    `decision_record` raise `KeyError: 'probe_during'`, hiding the real
+    error and skipping the recording write. The record now says the cost
+    could not be measured (`76c65a3`).
+  - 🐛 Bug fix — a `docker stats` row of `--` raised `ValueError` past the
+    TUI's stats poller, which would close the app. It is now reported as
+    stats unavailable (`66d6166`).
+  - 🐛 Bug fix — `/cycle ²` (and `/why`, `/search`, `/diff`) passed
+    `isdigit()` but failed `int()`, crashing the TUI. Non-ASCII digits
+    are now refused like any unknown cycle (`9097c33`).
+
 ## Session [2026-10-26-1532]
 
 - **Start status:** `ba5365e`, working tree clean. Open: YouTube
