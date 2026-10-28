@@ -27,11 +27,15 @@ badges of either kind.
 
 - **Start status:** `f30849f`, working tree clean, 209 tests, lint clean.
   Submitted. The `submission` tag marked `f30849f`. Last checks pending.
-- **End status:** `a5c4a26` plus this entry (updated after the first log
-  at `0afe2d8`). 211 tests, lint clean. A read-only bug hunt over the
-  whole codebase found three defects, each fixed in its own commit with a
-  regression test. The `submission` tag marks `9097c33`. A live scripted
-  run in the TUI was checked by the user and works. A fresh clone from
+- **End status:** `811e7e8` plus this entry (updated after the logs at
+  `0afe2d8` and `4d6c92b`). 211 tests, lint clean. A read-only bug hunt
+  over the whole codebase found three defects, each fixed in its own
+  commit with a regression test. The `submission` tag marks `811e7e8`. The
+  suite also passes on Linux (Python 3.12 in a Debian container: 210
+  passed, 1 Windows-only skip), and the README now says Linux users need
+  the `docker` group. A live run from a Linux host is still untested. A
+  live scripted run in the TUI was checked by the user and works. A fresh
+  clone from
   GitHub in a new folder, with the api image built from scratch, ran every
   README step through `make run SCRIPTED=1`, and the user drove the run to
   the end. Phase 5's fresh-clone box and Phase 6's README-only box are
@@ -49,6 +53,9 @@ badges of either kind.
   - 🐛 Bug fix — `/cycle ²` (and `/why`, `/search`, `/diff`) passed
     `isdigit()` but failed `int()`, crashing the TUI. Non-ASCII digits
     are now refused like any unknown cycle (`9097c33`).
+  - 🆕 Addition — the README's Setup section says Linux users need the
+    `docker` group, since Bedlam restarts the api container during a run
+    (`811e7e8`).
 
 ## Session [2026-10-26-1532]
 
