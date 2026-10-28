@@ -336,7 +336,12 @@ def decision_record(escalation: dict[str, Any]) -> str:
         ]
     shown = escalation.get("consequence")
     if shown:
-        during = ", ".join(f"{k} {v['status']}" for k, v in shown["probe_during"].items())
-        lines += ["## The cost, measured", "", f"Under `{shown['fault']}`: {during}.", ""]
+        lines += ["## The cost, measured", ""]
+        # A run that failed while the cost was going in has no probe to show.
+        if "probe_during" in shown:
+            during = ", ".join(f"{k} {v['status']}" for k, v in shown["probe_during"].items())
+            lines += [f"Under `{shown['fault']}`: {during}.", ""]
+        else:
+            lines += [f"`{shown['fault']}` could not be measured: the run failed first.", ""]
     lines += ["Bedlam presented the options. The developer chose.", ""]
     return "\n".join(lines)

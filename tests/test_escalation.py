@@ -156,6 +156,18 @@ def test_the_decision_record_marks_the_choice_and_keeps_both_sides(tmp_path: Pat
     assert "The developer chose." in record
 
 
+def test_a_cost_the_run_never_measured_still_gets_a_decision_record(tmp_path: Path) -> None:
+    trace, _, _ = _run_once(1729, tmp_path / "trace.json", choice="a")
+    escalation = trace["escalation"]
+    # What a run that failed while applying the cost leaves behind.
+    escalation["consequence"] = {"fault": escalation["consequence"]["fault"]}
+
+    record = decision_record(escalation)
+
+    assert "could not be measured" in record
+    assert "### A. Fail fast (chosen)" in record
+
+
 def test_a_key_before_the_trade_off_is_refused_not_kept() -> None:
     async def scenario() -> None:
         gate = GatedChoice()
