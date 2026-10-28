@@ -92,6 +92,7 @@ git clone --recurse-submodules https://github.com/thisIsMadelyn/Bedlam---NVIDIA-
 cd Bedlam---NVIDIA-Nebius-Hackathon-2026
 python -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
+                            # Git Bash: source .venv/Scripts/activate
 pip install -e ".[dev]"
 cp .env.example .env        # then fill in NEBIUS_API_KEY and TAVILY_API_KEY
 make smoke                  # verifies both live APIs
