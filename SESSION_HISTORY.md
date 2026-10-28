@@ -42,6 +42,8 @@ badges of either kind.
   ticked, with a note that the clone ran on the dev machine. Two small
   findings were left as they are: a very deep parent folder hits Windows'
   path limit, and the README's activation hint does not cover Git Bash.
+  Afterwards the temporary clone (with its venv and its copy of the keys)
+  and the `python:3.12` test image were deleted, and Docker was stopped.
 - **Badges:**
   - 🐛 Bug fix — a run that failed while applying the chosen cost made
     `decision_record` raise `KeyError: 'probe_during'`, hiding the real
