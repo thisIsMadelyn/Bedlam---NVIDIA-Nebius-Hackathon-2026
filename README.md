@@ -83,7 +83,9 @@ records how it was built.
 ## Setup
 
 Requires Python 3.12+, Docker with Compose, `make`, a Nebius Token Factory
-API key and a Tavily API key (the free tier is enough).
+API key and a Tavily API key (the free tier is enough). On Linux, your user
+must be in the `docker` group: Bedlam restarts the api container itself
+during a run.
 
 ```bash
 git clone --recurse-submodules https://github.com/thisIsMadelyn/Bedlam---NVIDIA-Nebius-Hackathon-2026.git
