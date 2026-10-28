@@ -55,6 +55,12 @@ def test_no_running_stack_is_reported_not_crashed() -> None:
         read(run)
 
 
+def test_a_container_without_a_sample_is_reported_not_crashed() -> None:
+    run, _ = _runner(stats="28765a0497ad\t--\t-- / --\n")
+    with pytest.raises(StatsUnavailable, match="docker stats"):
+        read(run)
+
+
 def test_sparkline_tops_out_at_one_core_or_the_peak() -> None:
     assert sparkline([]) == ""
     assert sparkline([0.0, 100.0]) == "▁█"

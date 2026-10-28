@@ -88,7 +88,11 @@ def read(run: Runner = _run) -> dict[Layer, ContainerStats]:
     for line in out.splitlines():
         container, cpu, memory = (part.strip() for part in line.split("\t"))
         used = memory.split("/")[0]
-        by_id[container] = ContainerStats(float(cpu.rstrip("%")), parse_bytes(used))
+        try:
+            by_id[container] = ContainerStats(float(cpu.rstrip("%")), parse_bytes(used))
+        except ValueError as exc:
+            # Docker prints `--` for a container it has no sample of yet.
+            raise StatsUnavailable(f"docker stats: {exc}") from exc
     stats = {}
     for layer, container in ids.items():
         # Compose and stats can print IDs of different lengths; match on prefix.
