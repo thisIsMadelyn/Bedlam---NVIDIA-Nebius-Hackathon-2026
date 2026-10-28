@@ -303,8 +303,8 @@ Artifacts:
 Done when:
 - [x] A stranger can run the project from the README with no other input
   (28 Oct: the fresh clone above followed the README's steps only. Notes: a
-  very deep parent folder hits Windows' path limit, and the activation hint
-  is for cmd and PowerShell, not Git Bash)
+  very deep parent folder hits Windows' path limit. The activation hint
+  covered only cmd and PowerShell, so a Git Bash line was added)
 - [x] The NVIDIA/Nebius usage section is standalone and could be pasted into Devpost
 
 ---

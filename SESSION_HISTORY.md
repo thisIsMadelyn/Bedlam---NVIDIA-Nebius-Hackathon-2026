@@ -27,23 +27,24 @@ badges of either kind.
 
 - **Start status:** `f30849f`, working tree clean, 209 tests, lint clean.
   Submitted. The `submission` tag marked `f30849f`. Last checks pending.
-- **End status:** `811e7e8` plus this entry (updated after the logs at
-  `0afe2d8` and `4d6c92b`). 211 tests, lint clean. A read-only bug hunt
-  over the whole codebase found three defects, each fixed in its own
-  commit with a regression test. The `submission` tag marks `811e7e8`. The
-  suite also passes on Linux (Python 3.12 in a Debian container: 210
-  passed, 1 Windows-only skip), and the README now says Linux users need
-  the `docker` group. A live run from a Linux host is still untested. A
-  live scripted run in the TUI was checked by the user and works. A fresh
-  clone from
-  GitHub in a new folder, with the api image built from scratch, ran every
-  README step through `make run SCRIPTED=1`, and the user drove the run to
-  the end. Phase 5's fresh-clone box and Phase 6's README-only box are
-  ticked, with a note that the clone ran on the dev machine. Two small
-  findings were left as they are: a very deep parent folder hits Windows'
-  path limit, and the README's activation hint does not cover Git Bash.
-  Afterwards the temporary clone (with its venv and its copy of the keys)
-  and the `python:3.12` test image were deleted, and Docker was stopped.
+- **End status:** `46f2016` plus this entry (updated after the logs at
+  `0afe2d8`, `4d6c92b`, `31acc56` and `0df1456`). 211 tests, lint clean. A
+  read-only bug hunt over the whole codebase found three defects, each
+  fixed in its own commit with a regression test. The `submission` tag
+  marks this entry's commit. The suite also passes on Linux (Python 3.12
+  in a Debian container: 210 passed, 1 Windows-only skip), and the README
+  now says Linux users need the `docker` group. A live run from a Linux
+  host is still untested. A live scripted run in the TUI was checked by
+  the user and works. A fresh clone from GitHub in a new folder, with the
+  api image built from scratch, ran every README step through `make run
+  SCRIPTED=1`, and the user drove the run to the end. Phase 5's
+  fresh-clone box and Phase 6's README-only box are ticked, with a note
+  that the clone ran on the dev machine. Two small findings came out of
+  it. A very deep parent folder hits Windows' path limit, which is left as
+  it is. The README's activation hint did not cover Git Bash, so a Git
+  Bash line was added (`46f2016`). Afterwards the temporary clone (with
+  its venv and its copy of the keys) and the `python:3.12` test image were
+  deleted, and Docker was stopped.
 - **Badges:**
   - 🐛 Bug fix — a run that failed while applying the chosen cost made
     `decision_record` raise `KeyError: 'probe_during'`, hiding the real
@@ -58,6 +59,9 @@ badges of either kind.
   - 🆕 Addition — the README's Setup section says Linux users need the
     `docker` group, since Bedlam restarts the api container during a run
     (`811e7e8`).
+  - 🆕 Addition — the README's setup block gives the Git Bash activation
+    command, `source .venv/Scripts/activate`, next to the cmd and
+    PowerShell one (`46f2016`).
 
 ## Session [2026-10-26-1532]
 
