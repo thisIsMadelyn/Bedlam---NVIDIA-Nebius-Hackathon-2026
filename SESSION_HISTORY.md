@@ -27,11 +27,17 @@ badges of either kind.
 
 - **Start status:** `f30849f`, working tree clean, 209 tests, lint clean.
   Submitted. The `submission` tag marked `f30849f`. Last checks pending.
-- **End status:** `9097c33` plus this entry. 211 tests, lint clean. A
-  read-only bug hunt over the whole codebase found three defects, each
-  fixed in its own commit with a regression test. The `submission` tag
-  now marks `9097c33`. A live scripted run in the TUI was checked by the
-  user and works.
+- **End status:** `a5c4a26` plus this entry (updated after the first log
+  at `0afe2d8`). 211 tests, lint clean. A read-only bug hunt over the
+  whole codebase found three defects, each fixed in its own commit with a
+  regression test. The `submission` tag marks `9097c33`. A live scripted
+  run in the TUI was checked by the user and works. A fresh clone from
+  GitHub in a new folder, with the api image built from scratch, ran every
+  README step through `make run SCRIPTED=1`, and the user drove the run to
+  the end. Phase 5's fresh-clone box and Phase 6's README-only box are
+  ticked, with a note that the clone ran on the dev machine. Two small
+  findings were left as they are: a very deep parent folder hits Windows'
+  path limit, and the README's activation hint does not cover Git Bash.
 - **Badges:**
   - 🐛 Bug fix — a run that failed while applying the chosen cost made
     `decision_record` raise `KeyError: 'probe_during'`, hiding the real
