@@ -253,7 +253,10 @@ Artifacts:
 
 Done when:
 - [x] Three clean runs in a row, no manual intervention
-- [ ] A fresh clone on a different machine reproduces the run from README alone
+- [x] A fresh clone on a different machine reproduces the run from README alone
+  (28 Oct: a clean clone in a new folder on the dev machine, api image built
+  from scratch. Every README step through `make run SCRIPTED=1` worked, 211
+  tests passed)
 
 ---
 
@@ -298,7 +301,10 @@ Artifacts:
   command, the post-mortem page, and what each panel shows
 
 Done when:
-- [ ] A stranger can run the project from the README with no other input
+- [x] A stranger can run the project from the README with no other input
+  (28 Oct: the fresh clone above followed the README's steps only. Notes: a
+  very deep parent folder hits Windows' path limit, and the activation hint
+  is for cmd and PowerShell, not Git Bash)
 - [x] The NVIDIA/Nebius usage section is standalone and could be pasted into Devpost
 
 ---
